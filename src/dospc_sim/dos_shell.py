@@ -49,9 +49,6 @@ class DOSShell:
     def run(self) -> None:
         """Run the DOS shell interactively."""
         self.running = True
-        self._output_line(f"DosPC Sim DOS Environment [Version 1.0]")
-        self._output_line(f"(c) 2024 DosPC Sim. All rights reserved.")
-        self._output_line()
         self._output_line(f"Welcome, {self.username}!")
         self._output_line(f"Type HELP for available commands.")
         self._output_line()

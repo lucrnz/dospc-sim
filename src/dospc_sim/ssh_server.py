@@ -166,8 +166,7 @@ class SSHClientHandler(threading.Thread):
         self.shell.run()
 
         # Send welcome message
-        channel.send(f"\r\nDosPC Sim DOS Environment [Version 1.0]\r\n")
-        channel.send(f"(c) 2024 DosPC Sim. All rights reserved.\r\n\r\n")
+        channel.send(f"\r\nDOS Environment\r\n\r\n")
         channel.send(f"Welcome, {user.username}!\r\n")
         channel.send(f"Type HELP for available commands.\r\n\r\n")
 
