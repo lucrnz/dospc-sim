@@ -26,6 +26,7 @@ from textual.color import Color
 
 from dospc_sim.ssh_server import SSHServer
 from dospc_sim.users import UserManager
+from dospc_sim.cli import run_cli
 
 
 # Setup logging - use a queue to avoid TUI conflicts
@@ -454,6 +455,8 @@ class DosPCSimApp(App):
 
 def main() -> None:
     """Entry point for the DosPC Sim application."""
+    if run_cli():
+        return
     app = DosPCSimApp()
     app.run()
 

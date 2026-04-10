@@ -159,18 +159,18 @@ Enjoy your retro computing experience!
         """List all users."""
         return list(self._users.values())
 
-    def delete_user(self, username: str) -> bool:
-        """Delete a user and their home directory."""
+    def delete_user(self, username: str, remove_data: bool = True) -> bool:
+        """Delete a user and optionally their home directory."""
         if username not in self._users:
             return False
 
         user = self._users[username]
 
-        # Remove home directory
-        import shutil
+        if remove_data:
+            import shutil
 
-        if os.path.exists(user.home_dir):
-            shutil.rmtree(user.home_dir)
+            if os.path.exists(user.home_dir):
+                shutil.rmtree(user.home_dir)
 
         del self._users[username]
         self._save_users()
