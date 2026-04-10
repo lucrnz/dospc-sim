@@ -1,13 +1,23 @@
 """DOS shell simulation for SSH clients."""
 
 import re
-import shlex
 from typing import List, Optional, Callable, Dict
 from pathlib import Path
 from datetime import datetime
 
 from dospc_sim.filesystem import UserFilesystem, FileInfo
 from dospc_sim.editor import run_editor
+from dospc_sim.parser import (
+    parse_command,
+    parse_batch,
+    CommandLine,
+    SimpleCommand,
+    PipeCommand,
+    EchoCommand,
+    Argument,
+    Switch,
+    BatchProgram,
+)
 
 
 class DOSShell:
@@ -53,6 +63,9 @@ class DOSShell:
         self._output_line(f"Type HELP for available commands.")
         self._output_line()
 
+    def _extract_args_strings(self, cmd: SimpleCommand) -> List[str]:
+        return cmd.arguments
+
     def execute_command(self, command_line: str) -> int:
         """Execute a single command and return errorlevel."""
         command_line = command_line.strip()
@@ -60,30 +73,34 @@ class DOSShell:
         if not command_line:
             return 0
 
-        # Handle comments in batch files
-        if command_line.startswith("::") or command_line.startswith("REM "):
+        parsed = parse_command(command_line)
+        if parsed is None:
             return 0
 
-        # Parse command and arguments
-        try:
-            parts = shlex.split(command_line, posix=False)
-        except ValueError:
-            # Fallback for simple parsing
-            parts = command_line.split()
+        ast = parsed.command
 
-        if not parts:
+        if isinstance(ast, EchoCommand):
+            self.last_errorlevel = self._execute_echo(ast)
+            return self.last_errorlevel
+
+        if isinstance(ast, PipeCommand):
+            self.last_errorlevel = self._execute_pipe(ast)
+            return self.last_errorlevel
+
+        if not isinstance(ast, SimpleCommand):
             return 0
 
-        command = parts[0].upper()
-        args = parts[1:]
+        command = ast.command
+        args = ast.arguments
+        switches = ast.switches
+        positional = ast.positional_args
 
         # Check for aliases
         if command in self.aliases:
             alias_cmd = self.aliases[command]
-            # Replace $1, $2, etc. with arguments
-            for i, arg in enumerate(args, 1):
+            for i, arg in enumerate(positional, 1):
                 alias_cmd = alias_cmd.replace(f"${i}", arg)
-            alias_cmd = alias_cmd.replace("$*", " ".join(args))
+            alias_cmd = alias_cmd.replace("$*", " ".join(positional))
             return self.execute_command(alias_cmd)
 
         # Execute the command
@@ -95,7 +112,7 @@ class DOSShell:
                 # Check if it's a batch file
                 batch_file = self._find_batch_file(command)
                 if batch_file:
-                    self.last_errorlevel = self._execute_batch(batch_file, args)
+                    self.last_errorlevel = self._execute_batch(batch_file, positional)
                 else:
                     self._output_line(f"Bad command or file name: {command}")
                     self.last_errorlevel = 1
@@ -104,6 +121,25 @@ class DOSShell:
             self.last_errorlevel = 1
 
         return self.last_errorlevel
+
+    def _execute_echo(self, echo: EchoCommand) -> int:
+        if echo.text is None:
+            self._output_line(f"ECHO is {'on' if echo.on else 'off'}")
+        else:
+            self._output_line(echo.text)
+        return 0
+
+    def _execute_pipe(self, pipe: PipeCommand) -> int:
+        if len(pipe.commands) < 2:
+            if pipe.commands:
+                cmd = pipe.commands[0]
+                handler = getattr(self, f"cmd_{cmd.command.lower()}", None)
+                if handler:
+                    return handler(cmd.arguments)
+            return 1
+
+        self._output_line("Pipe operations are not supported in this environment.")
+        return 1
 
     def _find_batch_file(self, name: str) -> Optional[str]:
         """Find a batch file (.bat or .cmd)."""
@@ -126,28 +162,46 @@ class DOSShell:
         return None
 
     def _execute_batch(self, batch_file: str, args: List[str]) -> int:
-        """Execute a batch file."""
+        """Execute a batch file using AST parsing."""
         try:
             content = self.fs.read_file(batch_file)
-            lines = content.splitlines()
 
             # Set batch parameters %0-%9
             params = {0: batch_file}
             for i, arg in enumerate(args[:9], 1):
                 params[i] = arg
 
-            for line in lines:
-                line = line.strip()
-                if not line or line.startswith("::") or line.upper().startswith("REM "):
-                    continue
+            # Expand batch parameters in the raw content before parsing
+            for i in range(10):
+                placeholder = f"%{i}"
+                if placeholder in content and i in params:
+                    content = content.replace(placeholder, params[i])
 
-                # Expand batch parameters
-                for i in range(10):
-                    placeholder = f"%{i}"
-                    if placeholder in line and i in params:
-                        line = line.replace(placeholder, params[i])
+            program = parse_batch(content)
 
-                self.execute_command(line)
+            for cmd_line in program.commands:
+                ast = cmd_line.command
+                if isinstance(ast, EchoCommand):
+                    self.last_errorlevel = self._execute_echo(ast)
+                elif isinstance(ast, (SimpleCommand, PipeCommand)):
+                    if isinstance(ast, PipeCommand):
+                        self.last_errorlevel = self._execute_pipe(ast)
+                    else:
+                        command = ast.command
+                        handler = getattr(self, f"cmd_{command.lower()}", None)
+                        if handler:
+                            self.last_errorlevel = handler(ast.arguments)
+                        else:
+                            batch = self._find_batch_file(command)
+                            if batch:
+                                self.last_errorlevel = self._execute_batch(
+                                    batch, ast.positional_args
+                                )
+                            else:
+                                self._output_line(
+                                    f"Bad command or file name: {command}"
+                                )
+                                self.last_errorlevel = 1
 
             return 0
         except Exception as e:
