@@ -17,6 +17,11 @@ This document details the DOS command compatibility status for the SSH DOS Envir
 | `REN` / `RENAME` | ✅ Fully Implemented | Rename files | Single file/directory rename |
 | `MOVE` | ✅ Fully Implemented | Move files | Moves files between directories |
 | `TYPE` | ✅ Fully Implemented | Display file contents | Text file display with UTF-8 support |
+| `TREE` | ✅ Fully Implemented | Display directory structure | Supports `/F` (show files) switch |
+| `FIND` | ✅ Fully Implemented | Search for text in a file | Supports `/V` (invert), `/C` (count), `/I` (case-insensitive), `/N` (line numbers) |
+| `MORE` | ✅ Fully Implemented | Display output one page at a time | Paginated file display |
+| `SORT` | ✅ Fully Implemented | Sort lines alphabetically | Supports `/R` (reverse) and `/O file` (output to file) |
+| `FC` | ✅ Fully Implemented | Compare two files | Supports `/N` (line numbers) switch |
 
 ### System and Environment Commands
 
@@ -150,5 +155,5 @@ Planned features for future releases:
 - [ ] I/O redirection support
 - [ ] Command history and line editing
 - [ ] Tab completion for filenames
-- [ ] Additional commands: ATTRIB, FIND, MORE, SORT
+- [ ] Additional commands: ATTRIB, XCOPY
 - [ ] Network drive simulation (NET USE)

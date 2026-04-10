@@ -370,3 +370,235 @@ ECHO %2"""
 
         result = shell.execute_command("REM This is also a comment")
         assert result == 0
+
+    # ==================== TREE tests ====================
+
+    def test_cmd_tree_basic(self, shell):
+        """Test TREE command with subdirectories."""
+        shell.fs.make_directory("DOCS")
+        shell.fs.make_directory("GAMES")
+        shell.fs.write_file("DOCS/README.TXT", "hello")
+        shell.fs.write_file("ROOT.TXT", "root file")
+
+        shell._output_capture.clear()
+        result = shell.cmd_tree([])
+        output = "\n".join(shell._output_capture)
+
+        assert result == 0
+        assert "DOCS" in output
+        assert "GAMES" in output
+        assert "ROOT.TXT" not in output
+
+    def test_cmd_tree_with_files(self, shell):
+        """Test TREE /F shows files."""
+        shell.fs.make_directory("SUB")
+        shell.fs.write_file("SUB/FILE.TXT", "hi")
+
+        shell._output_capture.clear()
+        result = shell.cmd_tree(["/F"])
+        output = "\n".join(shell._output_capture)
+
+        assert result == 0
+        assert "SUB" in output
+        assert "FILE.TXT" in output
+
+    def test_cmd_tree_nested(self, shell):
+        """Test TREE with nested directories."""
+        shell.fs.make_directory("A")
+        shell.fs.make_directory("A/B")
+        shell.fs.make_directory("A/C")
+
+        shell._output_capture.clear()
+        result = shell.cmd_tree([])
+        output = "\n".join(shell._output_capture)
+
+        assert result == 0
+        assert "A" in output
+        assert "B" in output
+        assert "C" in output
+
+    def test_cmd_tree_path_not_found(self, shell):
+        """Test TREE with non-existent path."""
+        result = shell.cmd_tree(["nonexistent"])
+        assert result == 1
+
+    # ==================== FIND tests ====================
+
+    def test_cmd_find_basic(self, shell):
+        """Test FIND command searching for a string."""
+        shell.fs.write_file("test.txt", "hello world\nfoo bar\nhello again")
+
+        shell._output_capture.clear()
+        result = shell.cmd_find(["hello", "test.txt"])
+        output = "\n".join(shell._output_capture)
+
+        assert result == 0
+        assert "hello world" in output
+        assert "hello again" in output
+        assert "foo bar" not in output
+
+    def test_cmd_find_not_found(self, shell):
+        """Test FIND with no matches returns 1."""
+        shell.fs.write_file("test.txt", "hello world")
+
+        shell._output_capture.clear()
+        result = shell.cmd_find(["xyz", "test.txt"])
+        assert result == 1
+
+    def test_cmd_find_case_insensitive(self, shell):
+        """Test FIND /I for case-insensitive search."""
+        shell.fs.write_file("test.txt", "Hello World")
+
+        shell._output_capture.clear()
+        result = shell.cmd_find(["hello", "/I", "test.txt"])
+        assert result == 0
+
+    def test_cmd_find_invert(self, shell):
+        """Test FIND /V to show non-matching lines."""
+        shell.fs.write_file("test.txt", "hello\nworld\nhello again")
+
+        shell._output_capture.clear()
+        result = shell.cmd_find(["hello", "/V", "test.txt"])
+        output = "\n".join(shell._output_capture)
+
+        assert result == 0
+        assert "world" in output
+        assert "hello" not in output
+
+    def test_cmd_find_count(self, shell):
+        """Test FIND /C to count matching lines."""
+        shell.fs.write_file("test.txt", "hello\nworld\nhello again")
+
+        shell._output_capture.clear()
+        result = shell.cmd_find(["hello", "/C", "test.txt"])
+        output = "\n".join(shell._output_capture)
+
+        assert result == 0
+        assert "2" in output
+
+    def test_cmd_find_line_numbers(self, shell):
+        """Test FIND /N shows line numbers."""
+        shell.fs.write_file("test.txt", "hello\nworld")
+
+        shell._output_capture.clear()
+        result = shell.cmd_find(["hello", "/N", "test.txt"])
+        output = "\n".join(shell._output_capture)
+
+        assert result == 0
+        assert "[1]" in output
+
+    def test_cmd_find_no_args(self, shell):
+        """Test FIND with no arguments shows usage."""
+        result = shell.cmd_find([])
+        assert result == 1
+
+    def test_cmd_find_file_not_found(self, shell):
+        """Test FIND with missing file."""
+        result = shell.cmd_find(["hello", "missing.txt"])
+        assert result == 1
+
+    # ==================== MORE tests ====================
+
+    def test_cmd_more_basic(self, shell):
+        """Test MORE displays file content."""
+        shell.fs.write_file("long.txt", "line1\nline2\nline3")
+
+        shell._output_capture.clear()
+        result = shell.cmd_more(["long.txt"])
+        output = "\n".join(shell._output_capture)
+
+        assert result == 0
+        assert "line1" in output
+        assert "line2" in output
+        assert "line3" in output
+
+    def test_cmd_more_no_args(self, shell):
+        """Test MORE with no arguments."""
+        result = shell.cmd_more([])
+        assert result == 1
+
+    def test_cmd_more_file_not_found(self, shell):
+        """Test MORE with missing file."""
+        result = shell.cmd_more(["missing.txt"])
+        assert result == 1
+
+    # ==================== SORT tests ====================
+
+    def test_cmd_sort_basic(self, shell):
+        """Test SORT sorts lines alphabetically."""
+        shell.fs.write_file("sortme.txt", "cherry\napple\nbanana")
+
+        shell._output_capture.clear()
+        result = shell.cmd_sort(["sortme.txt"])
+        output = "\n".join(shell._output_capture)
+
+        assert result == 0
+        lines = [l for l in shell._output_capture if l.strip()]
+        assert lines.index("apple") < lines.index("banana")
+        assert lines.index("banana") < lines.index("cherry")
+
+    def test_cmd_sort_reverse(self, shell):
+        """Test SORT /R reverses order."""
+        shell.fs.write_file("sortme.txt", "apple\ncherry\nbanana")
+
+        shell._output_capture.clear()
+        result = shell.cmd_sort(["/R", "sortme.txt"])
+        lines = [l for l in shell._output_capture if l.strip()]
+
+        assert result == 0
+        assert lines.index("cherry") < lines.index("banana")
+        assert lines.index("banana") < lines.index("apple")
+
+    def test_cmd_sort_output_file(self, shell):
+        """Test SORT /O writes to output file."""
+        shell.fs.write_file("sortme.txt", "cherry\napple\nbanana")
+
+        result = shell.cmd_sort(["sortme.txt", "/O", "sorted.txt"])
+        assert result == 0
+        assert shell.fs.file_exists("sorted.txt")
+        content = shell.fs.read_file("sorted.txt")
+        assert content.index("apple") < content.index("banana")
+        assert content.index("banana") < content.index("cherry")
+
+    def test_cmd_sort_file_not_found(self, shell):
+        """Test SORT with missing file."""
+        result = shell.cmd_sort(["missing.txt"])
+        assert result == 1
+
+    # ==================== FC tests ====================
+
+    def test_cmd_fc_identical(self, shell):
+        """Test FC with identical files."""
+        shell.fs.write_file("a.txt", "hello\nworld")
+        shell.fs.write_file("b.txt", "hello\nworld")
+
+        shell._output_capture.clear()
+        result = shell.cmd_fc(["a.txt", "b.txt"])
+        output = "\n".join(shell._output_capture)
+
+        assert result == 0
+        assert "no differences encountered" in output
+
+    def test_cmd_fc_different(self, shell):
+        """Test FC with different files."""
+        shell.fs.write_file("a.txt", "hello\nworld")
+        shell.fs.write_file("b.txt", "hello\nearth")
+
+        shell._output_capture.clear()
+        result = shell.cmd_fc(["a.txt", "b.txt"])
+        output = "\n".join(shell._output_capture)
+
+        assert result == 1
+        assert "world" in output
+        assert "earth" in output
+
+    def test_cmd_fc_no_args(self, shell):
+        """Test FC with no arguments."""
+        result = shell.cmd_fc([])
+        assert result == 1
+
+    def test_cmd_fc_file_not_found(self, shell):
+        """Test FC with missing file."""
+        shell.fs.write_file("a.txt", "hello")
+        result = shell.cmd_fc(["a.txt", "missing.txt"])
+        assert result == 1

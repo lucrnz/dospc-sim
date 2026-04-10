@@ -454,9 +454,12 @@ class DOSShell:
                 "EDIT",
                 "ERASE",
                 "EXIT",
+                "FC",
+                "FIND",
                 "HELP",
                 "MD",
                 "MKDIR",
+                "MORE",
                 "MOVE",
                 "PATH",
                 "PROMPT",
@@ -465,7 +468,9 @@ class DOSShell:
                 "RENAME",
                 "RMDIR",
                 "SET",
+                "SORT",
                 "TIME",
+                "TREE",
                 "TYPE",
                 "VER",
             ]
@@ -488,9 +493,12 @@ class DOSShell:
             "EDIT": "Starts the DosPC Sim text editor.\n\nEDIT [filename]",
             "ERASE": "Deletes one or more files.",
             "EXIT": "Quits the command interpreter.",
+            "FC": "Compares two files and displays the differences.\n\nFC [/N] file1 file2",
+            "FIND": 'Searches for a text string in a file.\n\nFIND [/V] [/C] [/I] [/N] "string" filename',
             "HELP": "Provides help information for commands.",
             "MD": "Creates a directory.",
             "MKDIR": "Creates a directory.",
+            "MORE": "Displays output one screen at a time.\n\nMORE filename",
             "MOVE": "Moves one or more files from one directory to another.",
             "PATH": "Displays or sets a search path for executable files.",
             "PROMPT": "Changes the command prompt.",
@@ -499,7 +507,9 @@ class DOSShell:
             "RENAME": "Renames a file or files.",
             "RMDIR": "Removes a directory.",
             "SET": "Displays, sets, or removes environment variables.",
+            "SORT": "Sorts input lines.\n\nSORT [/R] [filename] [/O outputfile]",
             "TIME": "Displays or sets the system time.",
+            "TREE": "Graphically displays the directory structure.\n\nTREE [path] [/F]",
             "TYPE": "Displays the contents of a text file.",
             "VER": "Displays the operating system version.",
         }
@@ -568,6 +578,268 @@ class DOSShell:
         now = datetime.now()
         self._output_line(f"Current time: {now.strftime('%I:%M:%S.%f %p')[:12]}")
         return 0
+
+    def cmd_tree(self, args: List[str]) -> int:
+        """TREE - Graphically display directory structure."""
+        path = "."
+        show_files = False
+
+        for arg in args:
+            upper = arg.upper()
+            if upper == "/F":
+                show_files = True
+            elif not arg.startswith("/"):
+                path = arg
+
+        try:
+            target = self.fs._resolve_path(path)
+            if not target.exists():
+                self._output_line(f"Path not found: {path}")
+                return 1
+            if not target.is_dir():
+                self._output_line(f"Not a directory: {path}")
+                return 1
+
+            rel = self.fs.get_current_path()
+            if path != ".":
+                rel = path
+            self._output_line(f"Folder PATH listing for {rel}")
+            self._output_line(f"Volume serial number is DosPC-Sim")
+            self._output_line(f".")
+
+            lines = []
+            self._build_tree(target, target, "", show_files, lines)
+            for line in lines:
+                self._output_line(line)
+            return 0
+        except PermissionError:
+            self._output_line("Access denied")
+            return 1
+
+    def _build_tree(self, root, current, prefix, show_files, lines):
+        entries = sorted(
+            current.iterdir(), key=lambda e: (not e.is_dir(), e.name.upper())
+        )
+        dirs = [e for e in entries if e.is_dir()]
+        files = [e for e in entries if e.is_file()]
+
+        all_items = dirs[:]
+        if show_files:
+            all_items.extend(files)
+
+        for i, item in enumerate(all_items):
+            is_last = i == len(all_items) - 1
+            connector = "└── " if is_last else "├── "
+            lines.append(f"{prefix}{connector}{item.name}")
+            if item.is_dir():
+                extension = "    " if is_last else "│   "
+                self._build_tree(root, item, prefix + extension, show_files, lines)
+
+    def cmd_find(self, args: List[str]) -> int:
+        """FIND - Search for a text string in a file."""
+        if not args:
+            self._output_line('FIND [/V] [/C] [/I] [/N] "string" [filename]')
+            self._output_line("  /V  Displays all lines NOT containing the string.")
+            self._output_line(
+                "  /C  Displays only the count of lines containing the string."
+            )
+            self._output_line("  /I  Case-insensitive search.")
+            self._output_line("  /N  Displays line numbers with displayed lines.")
+            return 1
+
+        invert = False
+        count_only = False
+        case_insensitive = False
+        show_numbers = False
+        search_string = None
+        filename = None
+
+        i = 0
+        while i < len(args):
+            upper = args[i].upper()
+            if upper == "/V":
+                invert = True
+            elif upper == "/C":
+                count_only = True
+            elif upper == "/I":
+                case_insensitive = True
+            elif upper == "/N":
+                show_numbers = True
+            elif search_string is None:
+                search_string = args[i]
+            else:
+                filename = args[i]
+            i += 1
+
+        if search_string is None:
+            self._output_line("FIND: Parameter format not correct")
+            return 1
+
+        if filename is None:
+            self._output_line("FIND: Parameter format not correct")
+            return 1
+
+        try:
+            content = self.fs.read_file(filename)
+        except (FileNotFoundError, IsADirectoryError):
+            self._output_line(f"File not found: {filename}")
+            return 1
+
+        search_in = search_string.lower() if case_insensitive else search_string
+        lines = content.splitlines()
+        match_lines = []
+        match_count = 0
+
+        for idx, line in enumerate(lines, 1):
+            check_line = line.lower() if case_insensitive else line
+            found = search_in in check_line
+            if (found and not invert) or (not found and invert):
+                match_count += 1
+                if not count_only:
+                    prefix = f"[{idx}]" if show_numbers else ""
+                    match_lines.append(f"{prefix}{line}")
+
+        self._output_line(f"---------- {filename.upper()}")
+
+        if count_only:
+            self._output_line(f"{match_count}")
+        else:
+            for ml in match_lines:
+                self._output_line(ml)
+
+        return 1 if match_count == 0 else 0
+
+    def cmd_more(self, args: List[str]) -> int:
+        """MORE - Display output one screen at a time."""
+        if not args:
+            self._output_line("Usage: MORE [filename]")
+            return 1
+
+        filename = args[0]
+        try:
+            content = self.fs.read_file(filename)
+        except (FileNotFoundError, IsADirectoryError):
+            self._output_line(f"File not found: {filename}")
+            return 1
+
+        lines = content.splitlines()
+        page_size = 24
+
+        for i, line in enumerate(lines):
+            self._output_line(line)
+            if (i + 1) % page_size == 0 and (i + 1) < len(lines):
+                self._output("-- More --")
+
+        return 0
+
+    def cmd_sort(self, args: List[str]) -> int:
+        """SORT - Sort input lines."""
+        reverse = False
+        filename = None
+        output_file = None
+        i = 0
+
+        while i < len(args):
+            upper = args[i].upper()
+            if upper == "/R":
+                reverse = True
+            elif upper == "/O" and i + 1 < len(args):
+                i += 1
+                output_file = args[i]
+            elif not args[i].startswith("/"):
+                filename = args[i]
+            i += 1
+
+        if filename:
+            try:
+                content = self.fs.read_file(filename)
+            except (FileNotFoundError, IsADirectoryError):
+                self._output_line(f"File not found: {filename}")
+                return 1
+            lines = content.splitlines()
+        else:
+            lines = []
+
+        sorted_lines = sorted(lines, reverse=reverse)
+
+        if output_file:
+            self.fs.write_file(output_file, "\n".join(sorted_lines) + "\n")
+            return 0
+
+        for line in sorted_lines:
+            self._output_line(line)
+        return 0
+
+    def cmd_fc(self, args: List[str]) -> int:
+        """FC - Compare two files and display differences."""
+        if len(args) < 2:
+            self._output_line("Usage: FC [/N] file1 file2")
+            return 1
+
+        show_line_numbers = False
+        filenames = []
+
+        for arg in args:
+            upper = arg.upper()
+            if upper == "/N":
+                show_line_numbers = True
+            elif not arg.startswith("/"):
+                filenames.append(arg)
+
+        if len(filenames) < 2:
+            self._output_line("Usage: FC [/N] file1 file2")
+            return 1
+
+        file1_name = filenames[0]
+        file2_name = filenames[1]
+
+        try:
+            content1 = self.fs.read_file(file1_name)
+        except (FileNotFoundError, IsADirectoryError):
+            self._output_line(f"File not found: {file1_name}")
+            return 1
+
+        try:
+            content2 = self.fs.read_file(file2_name)
+        except (FileNotFoundError, IsADirectoryError):
+            self._output_line(f"File not found: {file2_name}")
+            return 1
+
+        lines1 = content1.splitlines()
+        lines2 = content2.splitlines()
+
+        if lines1 == lines2:
+            self._output_line(f"Comparing files {file1_name} and {file2_name}")
+            self._output_line("FC: no differences encountered")
+            return 0
+
+        self._output_line(f"Comparing files {file1_name} and {file2_name}")
+
+        import difflib
+
+        diff = difflib.unified_diff(lines1, lines2, lineterm="", n=0)
+        patch_lines = list(diff)[2:]  # Skip the --- and +++ headers
+
+        in_hunk_1 = False
+        in_hunk_2 = False
+        for pl in patch_lines:
+            if pl.startswith("-"):
+                if not in_hunk_1:
+                    self._output_line(f"***** {file1_name}")
+                    in_hunk_1 = True
+                    in_hunk_2 = False
+                line = pl[1:]
+                if show_line_numbers:
+                    pass
+                self._output_line(line)
+            elif pl.startswith("+"):
+                if not in_hunk_2:
+                    self._output_line(f"***** {file2_name}")
+                    in_hunk_2 = True
+                    in_hunk_1 = False
+                self._output_line(pl[1:])
+
+        return 1
 
     def cmd_edit(self, args: List[str]) -> int:
         """EDIT - Text file editor."""
