@@ -1,10 +1,6 @@
-# DosPC Sim DOS Command Compatibility
+# DOS Command Compatibility
 
-This document details the DOS command compatibility status for the DosPC Sim SSH DOS Environment.
-
-## Overview
-
-DosPC Sim provides a simulated DOS environment accessible via SSH. Each user has an isolated home directory mounted as the C: drive. All commands are restricted to the user's own home directory, preventing cross-user file access.
+This document details the DOS command compatibility status for the SSH DOS Environment.
 
 ## Command Implementation Status
 
@@ -68,9 +64,9 @@ DosPC Sim provides a simulated DOS environment accessible via SSH. Each user has
  Volume in drive C is DOSPC-SIM
  Directory of C:\
 
-01/15/2024  10:30 AM    <DIR>          DOCS
-01/15/2024  10:30 AM    <DIR>          GAMES
-01/15/2024  10:30 AM               256 README.TXT
+01/15/2026  10:30 AM    <DIR>          DOCS
+01/15/2026  10:30 AM    <DIR>          GAMES
+01/15/2026  10:30 AM               256 README.TXT
                1 File(s)            256 bytes
                2 Dir(s)    52,428,800 bytes free
 ```
@@ -156,17 +152,3 @@ Planned features for future releases:
 - [ ] Tab completion for filenames
 - [ ] Additional commands: ATTRIB, FIND, MORE, SORT
 - [ ] Network drive simulation (NET USE)
-
-## Version History
-
-### Version 1.0 (Current)
-
-- Initial release with core DOS commands
-- SSH server with password authentication
-- User isolation and home directory mapping
-- Basic batch file support
-
----
-
-*Last Updated: 2024*
-*DosPC Sim DOS Environment Version 1.0*
