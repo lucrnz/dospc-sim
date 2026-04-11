@@ -1,25 +1,23 @@
 """SSH Server implementation for DosPC Sim."""
 
+import logging
 import os
 import select
 import socket
 import threading
-import logging
 from pathlib import Path
-from typing import Optional
 
-from paramiko import RSAKey, Transport, ServerInterface
+from paramiko import RSAKey, ServerInterface, Transport
 from paramiko.common import (
-    AUTH_SUCCESSFUL,
     AUTH_FAILED,
-    OPEN_SUCCEEDED,
+    AUTH_SUCCESSFUL,
     OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED,
+    OPEN_SUCCEEDED,
 )
 
-from dospc_sim.users import UserManager, User
-from dospc_sim.filesystem import UserFilesystem
 from dospc_sim.dos_shell import DOSShell
-
+from dospc_sim.filesystem import UserFilesystem
+from dospc_sim.users import User, UserManager
 
 # Setup logging
 logger = logging.getLogger("dospc_sim.ssh")
@@ -36,7 +34,7 @@ class SSHServerInterface(ServerInterface):
     def __init__(self, user_manager: UserManager, client_address: tuple):
         self.user_manager = user_manager
         self.client_address = client_address
-        self.user: Optional[User] = None
+        self.user: User | None = None
         self.authenticated = False
         self.event = threading.Event()
         logger.info(f"New connection from {client_address[0]}:{client_address[1]}")
@@ -54,9 +52,8 @@ class SSHServerInterface(ServerInterface):
         if user:
             self.user = user
             self.authenticated = True
-            logger.info(
-                f"User {username} authenticated successfully from {self.client_address[0]}"
-            )
+            addr = self.client_address[0]
+            logger.info(f"User {username} authenticated from {addr}")
             return AUTH_SUCCESSFUL
         logger.warning(
             f"Failed password auth for user: {username} from {self.client_address[0]}"
@@ -109,9 +106,9 @@ class SSHClientHandler(threading.Thread):
         self.address = address
         self.host_key = host_key
         self.user_manager = user_manager
-        self.transport: Optional[Transport] = None
+        self.transport: Transport | None = None
         self.channel = None
-        self.shell: Optional[DOSShell] = None
+        self.shell: DOSShell | None = None
 
     def run(self):
         """Handle the client connection."""
@@ -150,7 +147,7 @@ class SSHClientHandler(threading.Thread):
             """Send output to the client."""
             try:
                 channel.send(text + "\r\n")
-            except:
+            except Exception:
                 pass
 
         # Create DOS shell
@@ -165,7 +162,7 @@ class SSHClientHandler(threading.Thread):
                     input_line_buffer.append(
                         data.decode("utf-8", errors="ignore").strip()
                     )
-            except:
+            except Exception:
                 pass
 
         self.shell._input_callback = input_callback
@@ -214,11 +211,9 @@ class SSHClientHandler(threading.Thread):
                             # Check if this is a complete ANSI sequence
                             if len(seq) == 2 and seq[1] in (0x4F, 0x5B):
                                 continue
-                            if (
-                                len(seq) >= 3
-                                and chr(seq[-1]).isalpha()
-                                or seq[-1] == ord("~")
-                            ):
+                            if (len(seq) >= 3 and chr(seq[-1]).isalpha()) or seq[
+                                -1
+                            ] == ord("~"):
                                 break
                         else:
                             # Need more data - wait briefly
@@ -228,7 +223,7 @@ class SSHClientHandler(threading.Thread):
                                     more = channel.recv(16)
                                     raw = raw[:i] + more + raw[i:]
                                     continue
-                            except:
+                            except Exception:
                                 pass
 
                         # Parse the escape sequence
@@ -267,17 +262,17 @@ class SSHClientHandler(threading.Thread):
                                     f"\x1b[{len(command_buffer) - cursor_pos}C"
                                 )
                                 cursor_pos = len(command_buffer)
-                        elif seq_str in ("\x1b[3~",):  # Delete
-                            if cursor_pos < len(command_buffer):
-                                command_buffer = (
-                                    command_buffer[:cursor_pos]
-                                    + command_buffer[cursor_pos + 1 :]
-                                )
-                                # Redraw from cursor
-                                channel.send(command_buffer[cursor_pos:] + " ")
-                                channel.send(
-                                    f"\x1b[{len(command_buffer) - cursor_pos + 1}D"
-                                )
+                        elif seq_str in ("\x1b[3~",) and cursor_pos < len(
+                            command_buffer
+                        ):
+                            command_buffer = (
+                                command_buffer[:cursor_pos]
+                                + command_buffer[cursor_pos + 1 :]
+                            )
+                            channel.send(command_buffer[cursor_pos:] + " ")
+                            channel.send(
+                                f"\x1b[{len(command_buffer) - cursor_pos + 1}D"
+                            )
                         continue
 
                     if b == 0x0D or b == 0x0A:  # Enter
@@ -287,9 +282,8 @@ class SSHClientHandler(threading.Thread):
                             i += 1
                         channel.send("\r\n")
                         if command_buffer.strip():
-                            logger.info(
-                                f"User {user.username} executed: {command_buffer.strip()}"
-                            )
+                            cmd = command_buffer.strip()
+                            logger.info(f"User {user.username} executed: {cmd}")
                             self.shell.execute_command(command_buffer.strip())
                             history.append(command_buffer.strip())
                             history_index = len(history)
@@ -337,10 +331,7 @@ class SSHClientHandler(threading.Thread):
                             # Replace the last word with the completion
                             prefix = command_buffer[:cursor_pos]
                             last_space = prefix.rfind(" ")
-                            if last_space >= 0:
-                                before = prefix[: last_space + 1]
-                            else:
-                                before = ""
+                            before = prefix[: last_space + 1] if last_space >= 0 else ""
                             new_word = completions[0]
                             after = command_buffer[cursor_pos:]
                             command_buffer = before + new_word + after
@@ -441,7 +432,7 @@ class SSHClientHandler(threading.Thread):
                         base = upper_name.rsplit(".", 1)[0]
                         if base.startswith(partial):
                             matches.append(base)
-            except:
+            except Exception:
                 pass
             return matches
         else:
@@ -466,7 +457,7 @@ class SSHClientHandler(threading.Thread):
                         else:
                             matches.append(e.name + ("\\" if e.is_dir else ""))
                 return matches
-            except:
+            except Exception:
                 return []
 
     def _run_editor(self, channel, fs, filename: str) -> int:
@@ -477,7 +468,7 @@ class SSHClientHandler(threading.Thread):
             """Send output to the channel."""
             try:
                 channel.send(text.encode("utf-8"))
-            except:
+            except Exception:
                 pass
 
         def editor_input() -> str:
@@ -532,8 +523,8 @@ class SSHClientHandler(threading.Thread):
                         # Regular character
                         return buf.decode("utf-8", errors="ignore")
 
-                except Exception:
-                    raise EOFError()
+                except Exception as exc:
+                    raise EOFError() from exc
 
         # Create and run the editor
         editor = TextEditor(fs, editor_output, editor_input)
@@ -544,11 +535,11 @@ class SSHClientHandler(threading.Thread):
         try:
             if self.transport:
                 self.transport.close()
-        except:
+        except Exception:
             pass
         try:
             self.client_socket.close()
-        except:
+        except Exception:
             pass
 
 
@@ -564,8 +555,8 @@ class SSHServer:
         self.ssh_keys_dir = data_dir / "ssh_keys"
         self.host_key_file = self.ssh_keys_dir / "host_rsa_key"
         self.user_manager = UserManager(data_dir)
-        self.host_key: Optional[RSAKey] = None
-        self.server_socket: Optional[socket.socket] = None
+        self.host_key: RSAKey | None = None
+        self.server_socket: socket.socket | None = None
         self.running = False
         self._threads: list = []
         self._lock = threading.Lock()
@@ -644,7 +635,7 @@ class SSHServer:
                     # Clean up finished threads
                     self._threads = [t for t in self._threads if t.is_alive()]
 
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError:
                 break
@@ -664,7 +655,7 @@ class SSHServer:
         if self.server_socket:
             try:
                 self.server_socket.close()
-            except:
+            except Exception:
                 pass
 
         # Wait for threads to finish
@@ -672,7 +663,7 @@ class SSHServer:
             for thread in self._threads:
                 try:
                     thread.join(timeout=2)
-                except:
+                except Exception:
                     pass
 
         logger.info("SSH server stopped")

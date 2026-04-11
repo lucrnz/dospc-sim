@@ -1,12 +1,13 @@
 """Tests for DOS shell simulation."""
 
-import pytest
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
 
-from dospc_sim.filesystem import UserFilesystem
+import pytest
+
 from dospc_sim.dos_shell import DOSShell
+from dospc_sim.filesystem import UserFilesystem
 from dospc_sim.parser import parse_command
 
 
@@ -358,7 +359,8 @@ ECHO %2"""
         output = "\n".join(shell._output_capture)
 
         assert result == 0
-        # %0 contains the batch file name (may be uppercase due to case-insensitive matching)
+        # %0 contains the batch file name
+        # (may be uppercase due to case-insensitive matching)
         assert "TEST.BAT" in output.upper()
         assert "arg1" in output
         assert "arg2" in output

@@ -1,10 +1,10 @@
 """Tests for the text editor module."""
 
-import pytest
-from unittest.mock import Mock, call
-from pathlib import Path
-import tempfile
 import shutil
+import tempfile
+from unittest.mock import Mock
+
+import pytest
 
 from dospc_sim.editor import TextEditor, run_editor
 from dospc_sim.filesystem import UserFilesystem
@@ -40,8 +40,8 @@ class TestTextEditor:
             def mock_input():
                 try:
                     return next(key_iter)
-                except StopIteration:
-                    raise EOFError()
+                except StopIteration as exc:
+                    raise EOFError() from exc
 
             return mock_input
 
@@ -281,8 +281,8 @@ class TestEditorIntegration:
         def input_cb():
             try:
                 return next(input_iter)
-            except StopIteration:
-                raise EOFError()
+            except StopIteration as exc:
+                raise EOFError() from exc
 
         result = run_editor(filesystem, "test.txt", output_cb, input_cb)
 

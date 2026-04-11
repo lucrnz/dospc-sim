@@ -91,14 +91,18 @@ class TestRunCli:
         assert um.user_exists("testuser")
 
     def test_user_add_password_mismatch(self, tmp_path):
-        with patch("dospc_sim.cli.getpass.getpass", side_effect=["secret", "other"]):
-            with pytest.raises(SystemExit):
-                run_cli(["user", "add", "mismatchuser"])
+        with (
+            patch("dospc_sim.cli.getpass.getpass", side_effect=["secret", "other"]),
+            pytest.raises(SystemExit),
+        ):
+            run_cli(["user", "add", "mismatchuser"])
 
     def test_user_add_empty_password(self, tmp_path):
-        with patch("dospc_sim.cli.getpass.getpass", return_value=""):
-            with pytest.raises(SystemExit):
-                run_cli(["user", "add", "emptyuser"])
+        with (
+            patch("dospc_sim.cli.getpass.getpass", return_value=""),
+            pytest.raises(SystemExit),
+        ):
+            run_cli(["user", "add", "emptyuser"])
 
     def test_user_list_empty(self, capsys):
         result = run_cli(["user", "list"])

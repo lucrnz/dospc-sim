@@ -1,12 +1,13 @@
 """Tests for filesystem abstraction."""
 
 import os
-import pytest
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
 
-from dospc_sim.filesystem import UserFilesystem, FileInfo
+import pytest
+
+from dospc_sim.filesystem import UserFilesystem
 
 
 class TestUserFilesystem:
@@ -245,7 +246,7 @@ class TestUserFilesystem:
         filesystem.write_file("test.txt", "content")
 
         entries = filesystem.list_directory()
-        file_entry = [e for e in entries if e.name == "test.txt"][0]
+        file_entry = next(e for e in entries if e.name == "test.txt")
 
         assert file_entry.name == "test.txt"
         assert file_entry.size == len("content")

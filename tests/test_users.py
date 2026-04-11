@@ -1,12 +1,13 @@
 """Tests for user management system."""
 
 import os
-import pytest
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
 
-from dospc_sim.users import UserManager, User
+import pytest
+
+from dospc_sim.users import UserManager
 
 
 class TestUserManager:

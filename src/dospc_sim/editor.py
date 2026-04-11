@@ -4,11 +4,6 @@ A simple text editor similar to DOS edit.com that works over SSH connections.
 Supports basic file opening, editing, and saving functionality.
 """
 
-import os
-import sys
-from typing import List, Optional, Tuple
-from pathlib import Path
-
 from dospc_sim.filesystem import UserFilesystem
 
 
@@ -19,8 +14,8 @@ class TextEditor:
         self.fs = filesystem
         self.output = output_callback
         self.get_input = input_callback
-        self.lines: List[str] = []
-        self.filename: Optional[str] = None
+        self.lines: list[str] = []
+        self.filename: str | None = None
         self.modified = False
         self.cursor_row = 0
         self.cursor_col = 0
@@ -54,7 +49,7 @@ class TextEditor:
         # Ensure we start on a fresh line
         self._out("\r\n")
 
-    def run(self, filename: Optional[str] = None) -> int:
+    def run(self, filename: str | None = None) -> int:
         """Run the editor, optionally opening a file."""
         self.running = True
 
@@ -111,12 +106,12 @@ class TextEditor:
                 self.status_message = f"New file: {filename}"
                 return True
         except Exception as e:
-            self.status_message = f"Error: {str(e)}"
+            self.status_message = f"Error: {e!s}"
             self.lines = [""]
             self.filename = filename
             return False
 
-    def save_file(self, filename: Optional[str] = None) -> bool:
+    def save_file(self, filename: str | None = None) -> bool:
         """Save the current file."""
         if filename:
             self.filename = filename
@@ -132,7 +127,7 @@ class TextEditor:
             self.status_message = f"Saved {self.filename}"
             return True
         except Exception as e:
-            self.status_message = f"Error saving: {str(e)}"
+            self.status_message = f"Error saving: {e!s}"
             return False
 
     def _handle_key(self, key: str) -> None:
@@ -152,9 +147,7 @@ class TextEditor:
         elif key.startswith("\x1b["):
             # ANSI escape sequence (arrow keys, etc.)
             self._handle_escape_sequence(key)
-        elif key == "\x11":  # Ctrl+Q
-            self._quit()
-        elif key == "\x03":  # Ctrl+C
+        elif key == "\x11" or key == "\x03":  # Ctrl+Q
             self._quit()
         elif key == "\x13":  # Ctrl+S
             self.save_file()
@@ -424,7 +417,7 @@ class TextEditor:
 
 
 def run_editor(
-    filesystem: UserFilesystem, filename: Optional[str], output_callback, input_callback
+    filesystem: UserFilesystem, filename: str | None, output_callback, input_callback
 ) -> int:
     """Run the editor as a command."""
     editor = TextEditor(filesystem, output_callback, input_callback)

@@ -1,7 +1,7 @@
 """Integration tests for DosPC Sim application."""
 
 import pytest
-from textual.widgets import Label
+
 from dospc_sim.main import DosPCSimApp
 
 
@@ -16,7 +16,7 @@ class TestAppIntegration:
 
     async def test_app_composition(self, app):
         """Test that the app composes correctly with all components."""
-        async with app.run_test() as pilot:
+        async with app.run_test():
             # Check that the app mounted
             assert app.is_mounted
 
@@ -34,7 +34,7 @@ class TestAppIntegration:
 
     async def test_tabs_exist(self, app):
         """Test that tabs are present."""
-        async with app.run_test() as pilot:
+        async with app.run_test():
             # Check that tabs exist
             from textual.widgets import TabbedContent
 
@@ -79,7 +79,7 @@ class TestTabInteraction:
 
     async def test_tabs_visible(self, app):
         """Test that all tabs are visible."""
-        async with app.run_test() as pilot:
+        async with app.run_test():
             from textual.widgets import TabbedContent
 
             tabs = app.query_one(TabbedContent)
@@ -90,7 +90,7 @@ class TestTabInteraction:
 
     async def test_tab_switching(self, app):
         """Test that tabs can be switched."""
-        async with app.run_test() as pilot:
+        async with app.run_test():
             from textual.widgets import TabbedContent
 
             tabs = app.query_one(TabbedContent)

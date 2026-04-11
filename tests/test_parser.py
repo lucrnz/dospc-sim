@@ -1,17 +1,16 @@
 """Tests for the DOS command parser (Lark-based AST)."""
 
-import pytest
 from dospc_sim.parser import (
-    parse_command,
-    parse_batch,
-    CommandLine,
-    SimpleCommand,
-    PipeCommand,
-    EchoCommand,
-    BatchProgram,
     Argument,
-    Switch,
+    BatchProgram,
+    CommandLine,
     CommandName,
+    EchoCommand,
+    PipeCommand,
+    SimpleCommand,
+    Switch,
+    parse_batch,
+    parse_command,
 )
 
 

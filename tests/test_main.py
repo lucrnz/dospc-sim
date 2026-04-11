@@ -1,8 +1,9 @@
 """Tests for the main DosPC Sim application."""
 
 import pytest
-from textual.widgets import Label, Footer
-from dospc_sim.main import DosPCSimApp, ComingSoonScreen, main
+from textual.widgets import Label
+
+from dospc_sim.main import ComingSoonScreen, DosPCSimApp, main
 
 
 class TestDosPCSimApp:
@@ -63,7 +64,7 @@ class TestComingSoonScreen:
     async def test_screen_has_content(self):
         """Test that the screen contains expected content when composed."""
         app = DosPCSimApp()
-        async with app.run_test() as pilot:
+        async with app.run_test():
             # Create screen within app context
             screen = ComingSoonScreen()
             await app.mount(screen)
@@ -78,7 +79,7 @@ class TestComingSoonScreen:
     async def test_screen_title_present(self):
         """Test that the screen contains the title."""
         app = DosPCSimApp()
-        async with app.run_test() as pilot:
+        async with app.run_test():
             screen = ComingSoonScreen()
             await app.mount(screen)
 
@@ -92,7 +93,7 @@ class TestComingSoonScreen:
     async def test_screen_coming_soon_present(self):
         """Test that the screen contains 'COMING SOON' text."""
         app = DosPCSimApp()
-        async with app.run_test() as pilot:
+        async with app.run_test():
             screen = ComingSoonScreen()
             await app.mount(screen)
 

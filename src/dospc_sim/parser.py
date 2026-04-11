@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import List, Optional, Union
 
 from lark import Lark, Transformer, v_args
-
 
 # ---------------------------------------------------------------------------
 # Grammar - handles regular commands, pipes, and redirections
@@ -75,34 +73,34 @@ class CommandName:
 @dataclass
 class SimpleCommand:
     name: CommandName
-    args: List[Argument | Switch] = field(default_factory=list)
+    args: list[Argument | Switch] = field(default_factory=list)
 
     @property
     def command(self) -> str:
         return self.name.name
 
     @property
-    def arguments(self) -> List[str]:
+    def arguments(self) -> list[str]:
         return [a.value for a in self.args]
 
     @property
-    def switches(self) -> List[Switch]:
+    def switches(self) -> list[Switch]:
         return [a for a in self.args if isinstance(a, Switch)]
 
     @property
-    def positional_args(self) -> List[str]:
+    def positional_args(self) -> list[str]:
         return [a.value for a in self.args if isinstance(a, Argument)]
 
 
 @dataclass
 class PipeCommand:
-    commands: List[SimpleCommand]
+    commands: list[SimpleCommand]
 
 
 @dataclass
 class EchoCommand:
-    text: Optional[str] = None
-    on: Optional[bool] = None
+    text: str | None = None
+    on: bool | None = None
 
 
 @dataclass
@@ -136,21 +134,21 @@ class IfCompareCondition:
     right: str
 
 
-IfCondition = Union[IfExistCondition, IfErrorlevelCondition, IfCompareCondition]
+IfCondition = IfExistCondition | IfErrorlevelCondition | IfCompareCondition
 
 
 @dataclass
 class IfCommand:
     negated: bool
     condition: IfCondition
-    command: "CommandLine"
+    command: CommandLine
 
 
 @dataclass
 class ForCommand:
     var: str
-    items: List[str]
-    command: "CommandLine"
+    items: list[str]
+    command: CommandLine
 
 
 @dataclass
@@ -160,28 +158,28 @@ class Label:
 
 @dataclass
 class CommandLine:
-    command: Union[
-        SimpleCommand,
-        PipeCommand,
-        EchoCommand,
-        GotoCommand,
-        CallCommand,
-        PauseCommand,
-        IfCommand,
-        ForCommand,
-        Label,
-    ]
-    stdin_redirect: Optional[str] = None
-    stdout_redirect: Optional[str] = None
-    append_redirect: Optional[str] = None
+    command: (
+        SimpleCommand
+        | PipeCommand
+        | EchoCommand
+        | GotoCommand
+        | CallCommand
+        | PauseCommand
+        | IfCommand
+        | ForCommand
+        | Label
+    )
+    stdin_redirect: str | None = None
+    stdout_redirect: str | None = None
+    append_redirect: str | None = None
 
 
 @dataclass
 class BatchProgram:
-    lines: List[CommandLine]
+    lines: list[CommandLine]
 
     @property
-    def commands(self) -> List[CommandLine]:
+    def commands(self) -> list[CommandLine]:
         return self.lines
 
 
@@ -224,7 +222,7 @@ class _DOSTransformer(Transformer):
     @v_args(inline=True)
     def simple_command(self, *parts):
         name = None
-        args: List[Argument | Switch] = []
+        args: list[Argument | Switch] = []
         for p in parts:
             if isinstance(p, CommandName):
                 name = p
@@ -307,7 +305,7 @@ def _parse_redirects(line: str):
 _ECHO_RE = re.compile(r"^ECHO\s*(.*)", re.IGNORECASE)
 
 
-def _parse_echo(line: str) -> Optional[EchoCommand]:
+def _parse_echo(line: str) -> EchoCommand | None:
     m = _ECHO_RE.match(line)
     if not m:
         return None
@@ -318,9 +316,9 @@ def _parse_echo(line: str) -> Optional[EchoCommand]:
         return EchoCommand(text=None, on=True)
     if rest.upper() == "OFF":
         return EchoCommand(text=None, on=False)
-    if rest.startswith('"') and rest.endswith('"'):
-        rest = rest[1:-1]
-    elif rest.startswith("'") and rest.endswith("'"):
+    if (rest.startswith('"') and rest.endswith('"')) or (
+        rest.startswith("'") and rest.endswith("'")
+    ):
         rest = rest[1:-1]
     return EchoCommand(text=rest)
 
@@ -344,14 +342,14 @@ _FOR_RE = re.compile(
 )
 
 
-def _parse_goto(line: str) -> Optional[CommandLine]:
+def _parse_goto(line: str) -> CommandLine | None:
     m = _GOTO_RE.match(line)
     if m:
         return CommandLine(command=GotoCommand(label=m.group(1).strip().upper()))
     return None
 
 
-def _parse_call(line: str) -> Optional[CommandLine]:
+def _parse_call(line: str) -> CommandLine | None:
     m = _CALL_RE.match(line)
     if not m:
         return None
@@ -362,13 +360,13 @@ def _parse_call(line: str) -> Optional[CommandLine]:
     return None
 
 
-def _parse_pause(line: str) -> Optional[CommandLine]:
+def _parse_pause(line: str) -> CommandLine | None:
     if _PAUSE_RE.match(line):
         return CommandLine(command=PauseCommand())
     return None
 
 
-def _parse_if(line: str) -> Optional[CommandLine]:
+def _parse_if(line: str) -> CommandLine | None:
     m = _IF_RE.match(line)
     if not m:
         return None
@@ -401,7 +399,7 @@ def _parse_if(line: str) -> Optional[CommandLine]:
     )
 
 
-def _parse_for(line: str) -> Optional[CommandLine]:
+def _parse_for(line: str) -> CommandLine | None:
     m = _FOR_RE.match(line)
     if not m:
         return None
@@ -421,13 +419,13 @@ def _parse_for(line: str) -> Optional[CommandLine]:
     )
 
 
-def _parse_simple(line: str) -> Optional[SimpleCommand]:
+def _parse_simple(line: str) -> SimpleCommand | None:
     """Parse a simple 'CMD arg1 arg2' string into a SimpleCommand."""
     parts = line.split()
     if not parts:
         return None
     name = CommandName(name=parts[0].upper())
-    args: List[Argument | Switch] = []
+    args: list[Argument | Switch] = []
     for p in parts[1:]:
         if p.startswith("/"):
             args.append(Switch(name=p[1:].upper()))
@@ -454,7 +452,7 @@ _parser = Lark(
 _transformer = _DOSTransformer()
 
 
-def _parse_via_lark(line: str) -> Optional[CommandLine]:
+def _parse_via_lark(line: str) -> CommandLine | None:
     """Parse using the Lark grammar (regular commands + pipes + redirects)."""
     tree = _parser.parse(line + "\n")
     result = _transformer.transform(tree)
@@ -470,7 +468,7 @@ def _parse_via_lark(line: str) -> Optional[CommandLine]:
 # ---------------------------------------------------------------------------
 
 
-def parse_command(line: str) -> Optional[CommandLine]:
+def parse_command(line: str) -> CommandLine | None:
     if not line or not line.strip():
         return None
 
@@ -554,7 +552,7 @@ def parse_command(line: str) -> Optional[CommandLine]:
 
 def parse_batch(content: str) -> BatchProgram:
     lines = content.splitlines()
-    commands: List[CommandLine] = []
+    commands: list[CommandLine] = []
     for line in lines:
         line = line.strip()
         if not line or line.startswith("::") or line.upper().startswith("REM "):

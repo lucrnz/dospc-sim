@@ -2,32 +2,26 @@
 
 import logging
 import queue
-import threading
-from datetime import datetime
-from pathlib import Path
+from typing import ClassVar
 
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal, Vertical, Grid
+from textual.containers import Horizontal, Vertical
+from textual.reactive import reactive
 from textual.widgets import (
-    Header,
-    Footer,
-    Static,
-    Label,
     Button,
-    Input,
     DataTable,
+    Footer,
+    Input,
+    Label,
     Log,
+    Static,
     TabbedContent,
     TabPane,
-    Checkbox,
 )
-from textual.reactive import reactive
-from textual.color import Color
 
+from dospc_sim.cli import run_cli
 from dospc_sim.ssh_server import SSHServer
 from dospc_sim.users import UserManager
-from dospc_sim.cli import run_cli
-
 
 # Setup logging - use a queue to avoid TUI conflicts
 log_queue = queue.Queue()
@@ -218,7 +212,7 @@ class DosPCSimApp(App):
     }
     """
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list] = [
         ("q", "quit", "Quit"),
         ("t", "toggle_theme", "Toggle Theme"),
         ("f1", "help", "Help"),

@@ -2,10 +2,9 @@
 
 import os
 import shutil
-from pathlib import Path
-from typing import List, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 
 @dataclass
@@ -64,8 +63,8 @@ class UserFilesystem:
         # Security check: ensure path is within home directory
         try:
             target.relative_to(self.home_dir)
-        except ValueError:
-            raise PermissionError("Access denied: path outside home directory")
+        except ValueError as exc:
+            raise PermissionError("Access denied: path outside home directory") from exc
 
         return target
 
@@ -79,7 +78,7 @@ class UserFilesystem:
         except ValueError:
             return f"{self._drive_letter}:\\"
 
-    def list_directory(self, path: str = ".") -> List[FileInfo]:
+    def list_directory(self, path: str = ".") -> list[FileInfo]:
         """List files in a directory."""
         target = self._resolve_path(path)
 
@@ -186,7 +185,7 @@ class UserFilesystem:
         if target.is_dir():
             raise IsADirectoryError(f"Is a directory: {filename}")
 
-        with open(target, "r", encoding="utf-8", errors="replace") as f:
+        with open(target, encoding="utf-8", errors="replace") as f:
             return f.read()
 
     def write_file(self, filename: str, content: str) -> None:
@@ -292,7 +291,10 @@ class UserFilesystem:
             return False
 
     def walk_directory(self, path: str = "."):
-        """Recursively walk a directory tree, yielding (dir_path, dirs, files) tuples."""
+        """Recursively walk a directory tree.
+
+        Yields (dir_path, dirs, files) tuples.
+        """
         target = self._resolve_path(path)
 
         if not target.exists():
@@ -339,7 +341,7 @@ class UserFilesystem:
     def get_total_size(self) -> int:
         """Get total size of user's home directory."""
         total = 0
-        for dirpath, dirnames, filenames in os.walk(self.home_dir):
+        for dirpath, _dirnames, filenames in os.walk(self.home_dir):
             for f in filenames:
                 fp = os.path.join(dirpath, f)
                 total += os.path.getsize(fp)

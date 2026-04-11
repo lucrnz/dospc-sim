@@ -2,7 +2,7 @@
 
 import pytest
 from textual.widgets import Label
-from textual.color import Color
+
 from dospc_sim.main import ComingSoonScreen
 
 
@@ -26,7 +26,7 @@ class TestComingSoonScreenContent:
         from dospc_sim.main import DosPCSimApp
 
         app = DosPCSimApp()
-        async with app.run_test() as pilot:
+        async with app.run_test():
             screen = ComingSoonScreen()
             await app.mount(screen)
 

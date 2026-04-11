@@ -1,13 +1,11 @@
 """User management system for DosPC Sim SSH server."""
 
-import json
 import hashlib
-import secrets
+import json
 import os
+import secrets
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Optional, Dict, List
-from dataclasses import dataclass, asdict
-
 
 DATA_DIR = Path("data")
 USERS_FILE = DATA_DIR / "users.json"
@@ -23,7 +21,7 @@ class User:
     salt: str
     home_dir: str
     created_at: str
-    last_login: Optional[str] = None
+    last_login: str | None = None
     is_active: bool = True
 
 
@@ -34,7 +32,7 @@ class UserManager:
         self.data_dir = data_dir
         self.users_file = data_dir / "users.json"
         self.users_dir = data_dir / "users"
-        self._users: Dict[str, User] = {}
+        self._users: dict[str, User] = {}
         self._ensure_directories()
         self._load_users()
 
@@ -47,7 +45,7 @@ class UserManager:
         """Load users from JSON file."""
         if self.users_file.exists():
             try:
-                with open(self.users_file, "r") as f:
+                with open(self.users_file) as f:
                     data = json.load(f)
                     for username, user_data in data.items():
                         self._users[username] = User(**user_data)
@@ -60,7 +58,7 @@ class UserManager:
         with open(self.users_file, "w") as f:
             json.dump(data, f, indent=2)
 
-    def _hash_password(self, password: str, salt: Optional[str] = None) -> tuple:
+    def _hash_password(self, password: str, salt: str | None = None) -> tuple:
         """Hash a password with salt."""
         if salt is None:
             salt = secrets.token_hex(16)
@@ -132,7 +130,7 @@ Your directories:
 Enjoy your retro computing experience!
 """)
 
-    def authenticate(self, username: str, password: str) -> Optional[User]:
+    def authenticate(self, username: str, password: str) -> User | None:
         """Authenticate a user."""
         if username not in self._users:
             return None
@@ -151,11 +149,11 @@ Enjoy your retro computing experience!
 
         return None
 
-    def get_user(self, username: str) -> Optional[User]:
+    def get_user(self, username: str) -> User | None:
         """Get a user by username."""
         return self._users.get(username)
 
-    def list_users(self) -> List[User]:
+    def list_users(self) -> list[User]:
         """List all users."""
         return list(self._users.values())
 

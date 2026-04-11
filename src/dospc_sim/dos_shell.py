@@ -1,26 +1,26 @@
 """DOS shell simulation for SSH clients."""
 
 import re
-from typing import List, Optional, Callable, Dict
+from collections.abc import Callable
 from datetime import datetime
 
 from dospc_sim.filesystem import UserFilesystem
 from dospc_sim.parser import (
-    parse_command,
-    CommandLine,
-    SimpleCommand,
-    PipeCommand,
-    EchoCommand,
-    GotoCommand,
     CallCommand,
-    PauseCommand,
-    IfCommand,
+    CommandLine,
+    EchoCommand,
     ForCommand,
-    IfExistCondition,
-    IfErrorlevelCondition,
+    GotoCommand,
+    IfCommand,
     IfCompareCondition,
+    IfErrorlevelCondition,
+    IfExistCondition,
     Label,
+    PauseCommand,
+    PipeCommand,
+    SimpleCommand,
     Switch,
+    parse_command,
 )
 
 _ENV_VAR_RE = re.compile(r"%([^%]+)%")
@@ -40,14 +40,14 @@ class DOSShell:
         self,
         filesystem: UserFilesystem,
         username: str,
-        output_callback: Optional[Callable[[str], None]] = None,
+        output_callback: Callable[[str], None] | None = None,
     ):
         self.fs = filesystem
         self.username = username
         self.output_callback = output_callback or print
         self.running = False
         self.last_errorlevel = 0
-        self.aliases: Dict[str, str] = {}
+        self.aliases: dict[str, str] = {}
         self.environment = {
             "PROMPT": "$P$G",
             "PATH": "C:\\;C:\\DOS;C:\\WINDOWS",
@@ -55,8 +55,8 @@ class DOSShell:
             "TEMP": "C:\\TEMP",
             "TMP": "C:\\TEMP",
         }
-        self._piped_input: Optional[str] = None
-        self._input_callback: Optional[Callable[[], str]] = None
+        self._piped_input: str | None = None
+        self._input_callback: Callable[[], str] | None = None
         self._echo_on = True
 
     def _output(self, text: str = "") -> None:
@@ -213,7 +213,7 @@ class DOSShell:
             self._output_line(f"Bad command or file name: {command}")
             return 1
         except Exception as e:
-            self._output_line(f"Error: {str(e)}")
+            self._output_line(f"Error: {e!s}")
             return 1
 
     def _execute_pipe(self, pipe: PipeCommand) -> int:
@@ -320,7 +320,7 @@ class DOSShell:
             return f"CALL {self._ast_to_raw(CommandLine(command=ast.target))}"
         return ""
 
-    def _find_batch_file(self, name: str) -> Optional[str]:
+    def _find_batch_file(self, name: str) -> str | None:
         for ext in [".BAT", ".CMD"]:
             test_path = f"{name}{ext}"
             if self.fs.file_exists(test_path):
@@ -336,7 +336,7 @@ class DOSShell:
                     continue
         return None
 
-    def _execute_batch(self, batch_file: str, args: List[str]) -> int:
+    def _execute_batch(self, batch_file: str, args: list[str]) -> int:
         """Execute a batch file via the Lark AST."""
         try:
             content = self.fs.read_file(batch_file)
@@ -352,8 +352,8 @@ class DOSShell:
             raw_lines = content.splitlines()
 
             # Build label index from raw content
-            labels: Dict[str, int] = {}
-            line_index: List[Optional[str]] = []
+            labels: dict[str, int] = {}
+            line_index: list[str | None] = []
             for raw in raw_lines:
                 stripped = raw.strip()
                 if (
@@ -399,12 +399,12 @@ class DOSShell:
         except _GotoSignal:
             return self.last_errorlevel
         except Exception as e:
-            self._output_line(f"Batch error: {str(e)}")
+            self._output_line(f"Batch error: {e!s}")
             return 1
 
     # ==================== DOS Commands ====================
 
-    def cmd_dir(self, args: List[str]) -> int:
+    def cmd_dir(self, args: list[str]) -> int:
         path = "."
         show_all = False
         wide_format = False
@@ -466,7 +466,7 @@ class DOSShell:
             self._output_line(f"File not found: {path}")
             return 1
 
-    def cmd_cd(self, args: List[str]) -> int:
+    def cmd_cd(self, args: list[str]) -> int:
         if not args:
             self._output_line(self.fs.get_current_path())
             return 0
@@ -479,7 +479,7 @@ class DOSShell:
 
     cmd_chdir = cmd_cd
 
-    def cmd_md(self, args: List[str]) -> int:
+    def cmd_md(self, args: list[str]) -> int:
         if not args:
             self._output_line("The syntax of the command is incorrect.")
             return 1
@@ -490,13 +490,13 @@ class DOSShell:
                 self._output_line(f"A subdirectory or file {dirname} already exists.")
                 return 1
             except Exception as e:
-                self._output_line(f"Error creating directory: {str(e)}")
+                self._output_line(f"Error creating directory: {e!s}")
                 return 1
         return 0
 
     cmd_mkdir = cmd_md
 
-    def cmd_rd(self, args: List[str]) -> int:
+    def cmd_rd(self, args: list[str]) -> int:
         if not args:
             self._output_line("The syntax of the command is incorrect.")
             return 1
@@ -517,13 +517,13 @@ class DOSShell:
                 else:
                     self.fs.remove_directory(dirname)
             except Exception as e:
-                self._output_line(f"Error removing directory: {str(e)}")
+                self._output_line(f"Error removing directory: {e!s}")
                 return 1
         return 0
 
     cmd_rmdir = cmd_rd
 
-    def cmd_copy(self, args: List[str]) -> int:
+    def cmd_copy(self, args: list[str]) -> int:
         if len(args) < 2:
             self._output_line("The syntax of the command is incorrect.")
             return 1
@@ -537,7 +537,7 @@ class DOSShell:
             self._output_line("The system cannot find the file specified.")
             return 1
 
-    def cmd_del(self, args: List[str]) -> int:
+    def cmd_del(self, args: list[str]) -> int:
         if not args:
             self._output_line("The syntax of the command is incorrect.")
             return 1
@@ -555,11 +555,13 @@ class DOSShell:
 
                     entries = self.fs.list_directory()
                     for entry in entries:
-                        if fnmatch.fnmatch(entry.name.upper(), pattern.upper()):
-                            if not entry.is_dir:
-                                if not quiet:
-                                    self._output_line(f"Deleting {entry.name}")
-                                self.fs.delete_file(entry.name)
+                        if (
+                            fnmatch.fnmatch(entry.name.upper(), pattern.upper())
+                            and not entry.is_dir
+                        ):
+                            if not quiet:
+                                self._output_line(f"Deleting {entry.name}")
+                            self.fs.delete_file(entry.name)
                 else:
                     self.fs.delete_file(pattern)
             except Exception:
@@ -569,7 +571,7 @@ class DOSShell:
 
     cmd_erase = cmd_del
 
-    def cmd_ren(self, args: List[str]) -> int:
+    def cmd_ren(self, args: list[str]) -> int:
         if len(args) < 2:
             self._output_line("The syntax of the command is incorrect.")
             return 1
@@ -582,7 +584,7 @@ class DOSShell:
 
     cmd_rename = cmd_ren
 
-    def cmd_move(self, args: List[str]) -> int:
+    def cmd_move(self, args: list[str]) -> int:
         if len(args) < 2:
             self._output_line("The syntax of the command is incorrect.")
             return 1
@@ -594,7 +596,7 @@ class DOSShell:
             self._output_line("The system cannot find the file specified.")
             return 1
 
-    def cmd_type(self, args: List[str]) -> int:
+    def cmd_type(self, args: list[str]) -> int:
         if not args:
             self._output_line("The syntax of the command is incorrect.")
             return 1
@@ -605,11 +607,11 @@ class DOSShell:
             self._output_line("The system cannot find the file specified.")
             return 1
 
-    def cmd_cls(self, args: List[str]) -> int:
+    def cmd_cls(self, args: list[str]) -> int:
         self._output("\x1b[2J\x1b[H")
         return 0
 
-    def cmd_echo(self, args: List[str]) -> int:
+    def cmd_echo(self, args: list[str]) -> int:
         if not args:
             self._output_line(f"ECHO is {'on' if self._echo_on else 'off'}")
             return 0
@@ -627,7 +629,7 @@ class DOSShell:
         self._output_line(text)
         return 0
 
-    def cmd_help(self, args: List[str]) -> int:
+    def cmd_help(self, args: list[str]) -> int:
         if args:
             self._output_line(self._get_command_help(args[0].upper()))
         else:
@@ -679,7 +681,9 @@ class DOSShell:
 
     def _get_command_help(self, cmd: str) -> str:
         help_texts = {
-            "CALL": "Calls one batch program from another.\n\nCALL batchfile [parameters]",
+            "CALL": (
+                "Calls one batch program from another.\n\nCALL batchfile [parameters]"
+            ),
             "CD": "Displays the name of or changes the current directory.",
             "CHDIR": "Displays the name of or changes the current directory.",
             "CLS": "Clears the screen.",
@@ -691,12 +695,26 @@ class DOSShell:
             "EDIT": "Starts the DosPC Sim text editor.\n\nEDIT [filename]",
             "ERASE": "Deletes one or more files.",
             "EXIT": "Quits the command interpreter.",
-            "FC": "Compares two files and displays the differences.\n\nFC [/N] file1 file2",
-            "FIND": 'Searches for a text string in a file.\n\nFIND [/V] [/C] [/I] [/N] "string" filename',
-            "FOR": "Runs a specified command for each file in a set.\n\nFOR %%var IN (set) DO command",
+            "FC": (
+                "Compares two files and displays the differences."
+                "\n\nFC [/N] file1 file2"
+            ),
+            "FIND": (
+                "Searches for a text string in a file."
+                '\n\nFIND [/V] [/C] [/I] [/N] "string" filename'
+            ),
+            "FOR": (
+                "Runs a specified command for each file in a set."
+                "\n\nFOR %%var IN (set) DO command"
+            ),
             "GOTO": "Directs the command interpreter to a labelled line.\n\nGOTO label",
             "HELP": "Provides help information for commands.",
-            "IF": "Performs conditional processing in batch programs.\n\nIF [NOT] ERRORLEVEL number command\nIF [NOT] string1==string2 command\nIF [NOT] EXIST filename command",
+            "IF": (
+                "Performs conditional processing in batch programs."
+                "\n\nIF [NOT] ERRORLEVEL number command"
+                "\nIF [NOT] string1==string2 command"
+                "\nIF [NOT] EXIST filename command"
+            ),
             "MD": "Creates a directory.",
             "MKDIR": "Creates a directory.",
             "MORE": "Displays output one screen at a time.\n\nMORE filename",
@@ -717,17 +735,17 @@ class DOSShell:
         }
         return help_texts.get(cmd, f"Help not available for {cmd}")
 
-    def cmd_exit(self, args: List[str]) -> int:
+    def cmd_exit(self, args: list[str]) -> int:
         self.running = False
         return 0
 
-    def cmd_ver(self, args: List[str]) -> int:
+    def cmd_ver(self, args: list[str]) -> int:
         self._output_line()
         self._output_line("DosPC Sim DOS [Version 1.0]")
         self._output_line()
         return 0
 
-    def cmd_set(self, args: List[str]) -> int:
+    def cmd_set(self, args: list[str]) -> int:
         if not args:
             for key, value in sorted(self.environment.items()):
                 self._output_line(f"{key}={value}")
@@ -744,31 +762,31 @@ class DOSShell:
                 self._output_line(f"{var_name}={self.environment[var_name]}")
         return 0
 
-    def cmd_prompt(self, args: List[str]) -> int:
+    def cmd_prompt(self, args: list[str]) -> int:
         if args:
             self.environment["PROMPT"] = " ".join(args)
         else:
             self._output_line(f"Current prompt: {self.environment['PROMPT']}")
         return 0
 
-    def cmd_path(self, args: List[str]) -> int:
+    def cmd_path(self, args: list[str]) -> int:
         if args:
             self.environment["PATH"] = " ".join(args)
         else:
             self._output_line(f"PATH={self.environment['PATH']}")
         return 0
 
-    def cmd_date(self, args: List[str]) -> int:
+    def cmd_date(self, args: list[str]) -> int:
         self._output_line(f"Current date: {datetime.now().strftime('%a %m/%d/%Y')}")
         return 0
 
-    def cmd_time(self, args: List[str]) -> int:
+    def cmd_time(self, args: list[str]) -> int:
         self._output_line(
             f"Current time: {datetime.now().strftime('%I:%M:%S.%f %p')[:12]}"
         )
         return 0
 
-    def cmd_tree(self, args: List[str]) -> int:
+    def cmd_tree(self, args: list[str]) -> int:
         path = "."
         show_files = False
         for arg in args:
@@ -817,7 +835,7 @@ class DOSShell:
                 extension = "    " if is_last else "│   "
                 self._build_tree(root, item, prefix + extension, show_files, lines)
 
-    def cmd_find(self, args: List[str]) -> int:
+    def cmd_find(self, args: list[str]) -> int:
         if not args:
             self._output_line('FIND [/V] [/C] [/I] [/N] "string" [filename]')
             self._output_line("  /V  Displays all lines NOT containing the string.")
@@ -892,7 +910,7 @@ class DOSShell:
 
         return 1 if match_count == 0 else 0
 
-    def cmd_more(self, args: List[str]) -> int:
+    def cmd_more(self, args: list[str]) -> int:
         if not args and not self._piped_input:
             self._output_line("Usage: MORE [filename]")
             return 1
@@ -912,7 +930,7 @@ class DOSShell:
                 self._output("-- More --")
         return 0
 
-    def cmd_sort(self, args: List[str]) -> int:
+    def cmd_sort(self, args: list[str]) -> int:
         reverse = False
         filename = None
         output_file = None
@@ -948,7 +966,7 @@ class DOSShell:
             self._output_line(line)
         return 0
 
-    def cmd_fc(self, args: List[str]) -> int:
+    def cmd_fc(self, args: list[str]) -> int:
         if len(args) < 2:
             self._output_line("Usage: FC [/N] file1 file2")
             return 1
@@ -1003,7 +1021,7 @@ class DOSShell:
                 self._output_line(pl[1:])
         return 1
 
-    def cmd_edit(self, args: List[str]) -> int:
+    def cmd_edit(self, args: list[str]) -> int:
         filename = args[0] if args else ""
         if hasattr(self, "_editor_input_handler") and self._editor_input_handler:
             return self._editor_input_handler(filename)

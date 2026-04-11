@@ -6,8 +6,8 @@ import logging
 import signal
 import sys
 
-from dospc_sim.users import UserManager
 from dospc_sim.ssh_server import SSHServer
+from dospc_sim.users import UserManager
 
 
 def cmd_user_add(args):
@@ -49,9 +49,8 @@ def cmd_user_list(args):
     print("-" * 80)
     for user in users:
         last_login = (user.last_login or "Never")[:10]
-        print(
-            f"{user.username:<20} {user.created_at[:10]:<12} {last_login:<12} {user.home_dir}"
-        )
+        created = user.created_at[:10]
+        print(f"{user.username:<20} {created:<12} {last_login:<12} {user.home_dir}")
 
 
 def cmd_user_remove(args):
