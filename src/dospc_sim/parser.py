@@ -102,7 +102,7 @@ class PipeCommand:
 @dataclass
 class EchoCommand:
     text: Optional[str] = None
-    on: bool = True
+    on: Optional[bool] = None
 
 
 @dataclass
@@ -313,7 +313,7 @@ def _parse_echo(line: str) -> Optional[EchoCommand]:
         return None
     rest = m.group(1).strip()
     if not rest:
-        return EchoCommand(text=None, on=True)
+        return EchoCommand(text=None, on=None)
     if rest.upper() == "ON":
         return EchoCommand(text=None, on=True)
     if rest.upper() == "OFF":

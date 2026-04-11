@@ -183,7 +183,10 @@ class DOSShell:
 
     def _execute_echo(self, echo: EchoCommand) -> int:
         if echo.text is None:
-            self._output_line(f"ECHO is {'on' if echo.on else 'off'}")
+            if echo.on is None:
+                self._output_line(f"ECHO is {'on' if self._echo_on else 'off'}")
+            else:
+                self._echo_on = echo.on
         else:
             self._output_line(echo.text)
         return 0
@@ -392,9 +395,9 @@ class DOSShell:
                         self._output_line(f"Label not found: {target}")
 
             self._echo_on = saved_echo
-            return 0
+            return self.last_errorlevel
         except _GotoSignal:
-            return 0
+            return self.last_errorlevel
         except Exception as e:
             self._output_line(f"Batch error: {str(e)}")
             return 1
@@ -608,11 +611,13 @@ class DOSShell:
 
     def cmd_echo(self, args: List[str]) -> int:
         if not args:
-            self._output_line(f"ECHO is {'on' if True else 'off'}")
+            self._output_line(f"ECHO is {'on' if self._echo_on else 'off'}")
             return 0
         if len(args) == 1 and args[0].upper() == "ON":
+            self._echo_on = True
             return 0
         if len(args) == 1 and args[0].upper() == "OFF":
+            self._echo_on = False
             return 0
         text = " ".join(args)
         if (text.startswith('"') and text.endswith('"')) or (

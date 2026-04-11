@@ -331,7 +331,7 @@ class DosPCSimApp(App):
         """Refresh the users table."""
         try:
             table = self.query_one("#users-table", DataTable)
-            table.clear()
+            table.clear(columns=True)
             table.add_columns("Username", "Created", "Last Login", "Home Directory")
 
             for user in self.user_manager.list_users():

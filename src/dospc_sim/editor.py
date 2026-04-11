@@ -152,6 +152,8 @@ class TextEditor:
         elif key.startswith("\x1b["):
             # ANSI escape sequence (arrow keys, etc.)
             self._handle_escape_sequence(key)
+        elif key == "\x11":  # Ctrl+Q
+            self._quit()
         elif key == "\x03":  # Ctrl+C
             self._quit()
         elif key == "\x13":  # Ctrl+S

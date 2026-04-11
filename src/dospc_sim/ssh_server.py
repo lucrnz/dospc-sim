@@ -177,11 +177,6 @@ class SSHClientHandler(threading.Thread):
 
         self.shell.run()
 
-        # Send welcome message
-        channel.send("\r\nDOS Environment\r\n\r\n")
-        channel.send(f"Welcome, {user.username}!\r\n")
-        channel.send("Type HELP for available commands.\r\n\r\n")
-
         # Line editor state
         command_buffer = ""
         cursor_pos = 0
@@ -330,6 +325,7 @@ class SSHClientHandler(threading.Thread):
                         continue
 
                     if b == 0x04:  # Ctrl+D
+                        self.shell.running = False
                         break
 
                     if b == 0x09:  # Tab - autocomplete

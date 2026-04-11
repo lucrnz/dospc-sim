@@ -130,7 +130,7 @@ class TestEchoParsing:
         assert r is not None
         assert isinstance(r.command, EchoCommand)
         assert r.command.text is None
-        assert r.command.on is True
+        assert r.command.on is None
 
     def test_echo_on(self):
         r = parse_command("ECHO ON")
