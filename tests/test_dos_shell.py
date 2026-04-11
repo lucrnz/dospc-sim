@@ -1,6 +1,5 @@
 """Tests for DOS shell simulation."""
 
-import os
 import pytest
 import tempfile
 import shutil
@@ -8,6 +7,7 @@ from pathlib import Path
 
 from dospc_sim.filesystem import UserFilesystem
 from dospc_sim.dos_shell import DOSShell
+from dospc_sim.parser import parse_command
 
 
 class TestDOSShell:
@@ -530,10 +530,9 @@ ECHO %2"""
 
         shell._output_capture.clear()
         result = shell.cmd_sort(["sortme.txt"])
-        output = "\n".join(shell._output_capture)
 
         assert result == 0
-        lines = [l for l in shell._output_capture if l.strip()]
+        lines = [line for line in shell._output_capture if line.strip()]
         assert lines.index("apple") < lines.index("banana")
         assert lines.index("banana") < lines.index("cherry")
 
@@ -543,7 +542,7 @@ ECHO %2"""
 
         shell._output_capture.clear()
         result = shell.cmd_sort(["/R", "sortme.txt"])
-        lines = [l for l in shell._output_capture if l.strip()]
+        lines = [line for line in shell._output_capture if line.strip()]
 
         assert result == 0
         assert lines.index("cherry") < lines.index("banana")
@@ -602,3 +601,478 @@ ECHO %2"""
         shell.fs.write_file("a.txt", "hello")
         result = shell.cmd_fc(["a.txt", "missing.txt"])
         assert result == 1
+
+    # ==================== Environment Variable Expansion tests ====================
+
+    def test_expand_known_variable(self, shell):
+        shell.environment["MYVAR"] = "hello"
+        assert shell.expand_variables("%MYVAR%") == "hello"
+
+    def test_expand_case_insensitive(self, shell):
+        shell.environment["MYVAR"] = "hello"
+        assert shell.expand_variables("%myvar%") == "hello"
+
+    def test_expand_unknown_variable_unchanged(self, shell):
+        assert shell.expand_variables("%UNKNOWN%") == "%UNKNOWN%"
+
+    def test_expand_multiple_variables(self, shell):
+        shell.environment["A"] = "1"
+        shell.environment["B"] = "2"
+        assert shell.expand_variables("%A% and %B%") == "1 and 2"
+
+    def test_expand_in_echo_command(self, shell):
+        shell.environment["GREETING"] = "Hello"
+        shell._output_capture.clear()
+        shell.execute_command("ECHO %GREETING% World")
+        output = "\n".join(shell._output_capture)
+        assert "Hello World" in output
+
+    def test_expand_in_type_command(self, shell):
+        shell.environment["MYFILE"] = "test"
+        shell.fs.write_file("test.txt", "content")
+        shell._output_capture.clear()
+        shell.execute_command("TYPE %MYFILE%.txt")
+        output = "\n".join(shell._output_capture)
+        assert "content" in output
+
+    def test_expand_in_cd_command(self, shell):
+        shell.fs.make_directory("MYDIR")
+        shell.environment["TARGET"] = "MYDIR"
+        shell._output_capture.clear()
+        shell.execute_command("CD %TARGET%")
+        assert shell.get_prompt() == "C:\\MYDIR>"
+
+    def test_expand_path_variable(self, shell):
+        shell._output_capture.clear()
+        shell.execute_command("ECHO %PATH%")
+        output = "\n".join(shell._output_capture)
+        assert "C:\\" in output
+
+    # ==================== Pipe Execution tests ====================
+
+    def test_type_pipe_sort(self, shell):
+        shell.fs.write_file("unsorted.txt", "cherry\napple\nbanana")
+        shell._output_capture.clear()
+        shell.execute_command("TYPE unsorted.txt | SORT")
+        output = "\n".join(shell._output_capture)
+        apple_idx = output.index("apple")
+        banana_idx = output.index("banana")
+        cherry_idx = output.index("cherry")
+        assert apple_idx < banana_idx < cherry_idx
+
+    def test_type_pipe_find(self, shell):
+        shell.fs.write_file("data.txt", "hello world\nfoo bar\nhello again")
+        shell._output_capture.clear()
+        shell.execute_command("TYPE data.txt | FIND hello")
+        output = "\n".join(shell._output_capture)
+        assert "hello world" in output
+        assert "hello again" in output
+        assert "foo bar" not in output
+
+    def test_type_pipe_sort_pipe_find(self, shell):
+        shell.fs.write_file("data.txt", "cherry\napple\nbanana")
+        shell._output_capture.clear()
+        shell.execute_command("TYPE data.txt | SORT | FIND apple")
+        output = "\n".join(shell._output_capture)
+        assert "apple" in output
+
+    def test_pipe_three_commands(self, shell):
+        shell.fs.write_file("data.txt", "zebra\napple\nbanana\navocado")
+        shell._output_capture.clear()
+        shell.execute_command("TYPE data.txt | SORT | FIND a")
+        output = "\n".join(shell._output_capture)
+        assert "apple" in output
+        assert "avocado" in output
+
+    # ==================== I/O Redirection tests ====================
+
+    def test_echo_redirect_to_file(self, shell):
+        shell.execute_command("ECHO Hello World > output.txt")
+        assert shell.fs.file_exists("output.txt")
+        content = shell.fs.read_file("output.txt")
+        assert "Hello World" in content
+
+    def test_dir_redirect_to_file(self, shell):
+        shell.fs.write_file("marker.txt", "test")
+        shell.execute_command("DIR > listing.txt")
+        assert shell.fs.file_exists("listing.txt")
+
+    def test_append_redirect(self, shell):
+        shell.execute_command("ECHO Line 1 > log.txt")
+        shell.execute_command("ECHO Line 2 >> log.txt")
+        content = shell.fs.read_file("log.txt")
+        assert "Line 1" in content
+        assert "Line 2" in content
+
+    def test_input_redirect_sort(self, shell):
+        shell.fs.write_file("data.txt", "cherry\napple\nbanana")
+        shell._output_capture.clear()
+        shell.execute_command("SORT < data.txt")
+        output = "\n".join(shell._output_capture)
+        assert "apple" in output
+        assert "banana" in output
+        assert "cherry" in output
+
+    def test_parser_redirect_write(self):
+        r = parse_command("ECHO hello > out.txt")
+        assert r is not None
+        assert r.stdout_redirect == "out.txt"
+
+    def test_parser_redirect_append(self):
+        r = parse_command("ECHO hello >> out.txt")
+        assert r is not None
+        assert r.append_redirect == "out.txt"
+
+    def test_parser_redirect_input(self):
+        r = parse_command("SORT < input.txt")
+        assert r is not None
+        assert r.stdin_redirect == "input.txt"
+
+    def test_parser_redirect_combined(self):
+        r = parse_command("SORT < input.txt > output.txt")
+        assert r is not None
+        assert r.stdin_redirect == "input.txt"
+        assert r.stdout_redirect == "output.txt"
+
+    def test_type_redirect_to_file(self, shell):
+        shell.fs.write_file("source.txt", "original content")
+        shell.execute_command("TYPE source.txt > copy.txt")
+        assert shell.fs.file_exists("copy.txt")
+        content = shell.fs.read_file("copy.txt")
+        assert "original content" in content
+
+    # ==================== Batch GOTO tests ====================
+
+    def test_goto_forward(self, shell):
+        batch = """ECHO Before
+GOTO SKIP
+ECHO Skipped
+:SKIP
+ECHO After"""
+        shell.fs.write_file("test.bat", batch)
+        shell._output_capture.clear()
+        shell.execute_command("TEST")
+        output = "\n".join(shell._output_capture)
+        assert "Before" in output
+        assert "Skipped" not in output
+        assert "After" in output
+
+    def test_goto_backward_loop(self, shell):
+        batch = """SET COUNT=0
+:LOOP
+ECHO Iteration
+GOTO END
+:END"""
+        shell.fs.write_file("test.bat", batch)
+        shell._output_capture.clear()
+        shell.execute_command("TEST")
+        output = "\n".join(shell._output_capture)
+        assert "Iteration" in output
+
+    def test_goto_nonexistent_label(self, shell):
+        batch = """GOTO MISSING
+ECHO This runs"""
+        shell.fs.write_file("test.bat", batch)
+        shell._output_capture.clear()
+        shell.execute_command("TEST")
+        output = "\n".join(shell._output_capture)
+        assert "Label not found" in output
+
+    # ==================== Batch IF tests ====================
+
+    def test_if_exist_true(self, shell):
+        shell.fs.write_file("exists.txt", "data")
+        batch = """IF EXIST exists.txt ECHO Found
+ECHO Done"""
+        shell.fs.write_file("test.bat", batch)
+        shell._output_capture.clear()
+        shell.execute_command("TEST")
+        output = "\n".join(shell._output_capture)
+        assert "Found" in output
+        assert "Done" in output
+
+    def test_if_exist_false(self, shell):
+        batch = """IF EXIST missing.txt ECHO Found
+ECHO Done"""
+        shell.fs.write_file("test.bat", batch)
+        shell._output_capture.clear()
+        shell.execute_command("TEST")
+        output = "\n".join(shell._output_capture)
+        assert "Found" not in output
+        assert "Done" in output
+
+    def test_if_not_exist(self, shell):
+        batch = """IF NOT EXIST missing.txt ECHO Not Found
+ECHO Done"""
+        shell.fs.write_file("test.bat", batch)
+        shell._output_capture.clear()
+        shell.execute_command("TEST")
+        output = "\n".join(shell._output_capture)
+        assert "Not Found" in output
+
+    def test_if_errorlevel(self, shell):
+        batch = """IF ERRORLEVEL 1 ECHO Failed
+ECHO Done"""
+        shell.fs.write_file("test.bat", batch)
+        shell.last_errorlevel = 1
+        shell._output_capture.clear()
+        shell.execute_command("TEST")
+        output = "\n".join(shell._output_capture)
+        assert "Failed" in output
+
+    def test_if_errorlevel_not_met(self, shell):
+        batch = """IF ERRORLEVEL 1 ECHO Failed
+ECHO Done"""
+        shell.fs.write_file("test.bat", batch)
+        shell.last_errorlevel = 0
+        shell._output_capture.clear()
+        shell.execute_command("TEST")
+        output = "\n".join(shell._output_capture)
+        assert "Failed" not in output
+        assert "Done" in output
+
+    def test_if_string_equality(self, shell):
+        batch = """IF hello==hello ECHO Match
+ECHO Done"""
+        shell.fs.write_file("test.bat", batch)
+        shell._output_capture.clear()
+        shell.execute_command("TEST")
+        output = "\n".join(shell._output_capture)
+        assert "Match" in output
+
+    def test_if_string_inequality(self, shell):
+        batch = """IF hello==world ECHO Match
+ECHO Done"""
+        shell.fs.write_file("test.bat", batch)
+        shell._output_capture.clear()
+        shell.execute_command("TEST")
+        output = "\n".join(shell._output_capture)
+        assert "Match" not in output
+        assert "Done" in output
+
+    def test_if_goto(self, shell):
+        batch = """IF 1==1 GOTO SKIP
+ECHO Skipped
+:SKIP
+ECHO Arrived"""
+        shell.fs.write_file("test.bat", batch)
+        shell._output_capture.clear()
+        shell.execute_command("TEST")
+        output = "\n".join(shell._output_capture)
+        assert "Skipped" not in output
+        assert "Arrived" in output
+
+    # ==================== Batch FOR tests ====================
+
+    def test_for_loop_basic(self, shell):
+        batch = "FOR %%F IN (a b c) DO ECHO %%F"
+        shell.fs.write_file("test.bat", batch)
+        shell._output_capture.clear()
+        shell.execute_command("TEST")
+        output = "\n".join(shell._output_capture)
+        assert "a" in output
+        assert "b" in output
+        assert "c" in output
+
+    def test_for_loop_with_file_ops(self, shell):
+        shell.fs.write_file("a.txt", "content a")
+        shell.fs.write_file("b.txt", "content b")
+        batch = "FOR %%F IN (a.txt b.txt) DO TYPE %%F"
+        shell.fs.write_file("test.bat", batch)
+        shell._output_capture.clear()
+        shell.execute_command("TEST")
+        output = "\n".join(shell._output_capture)
+        assert "content a" in output
+        assert "content b" in output
+
+    # ==================== Batch CALL tests ====================
+
+    def test_call_batch(self, shell):
+        shell.fs.write_file("sub.bat", "ECHO In Subroutine")
+        batch = """ECHO Before
+CALL SUB
+ECHO After"""
+        shell.fs.write_file("main.bat", batch)
+        shell._output_capture.clear()
+        shell.execute_command("MAIN")
+        output = "\n".join(shell._output_capture)
+        assert "Before" in output
+        assert "In Subroutine" in output
+        assert "After" in output
+
+    def test_call_with_params(self, shell):
+        shell.fs.write_file("greet.bat", "ECHO Hello %1")
+        batch = "CALL GREET World"
+        shell.fs.write_file("main.bat", batch)
+        shell._output_capture.clear()
+        shell.execute_command("MAIN")
+        output = "\n".join(shell._output_capture)
+        assert "Hello World" in output
+
+    # ==================== Batch PAUSE tests ====================
+
+    def test_pause_message(self, shell):
+        batch = """ECHO Before
+PAUSE
+ECHO After"""
+        shell.fs.write_file("test.bat", batch)
+        shell._output_capture.clear()
+        shell.execute_command("TEST")
+        output = "\n".join(shell._output_capture)
+        assert "Before" in output
+        assert "Press any key to continue" in output
+        assert "After" in output
+
+    # ==================== Batch ECHO ON/OFF tests ====================
+
+    def test_echo_off_does_not_break(self, shell):
+        batch = """ECHO OFF
+ECHO Still works"""
+        shell.fs.write_file("test.bat", batch)
+        shell._output_capture.clear()
+        shell.execute_command("TEST")
+        output = "\n".join(shell._output_capture)
+        assert "Still works" in output
+
+    # ==================== PROMPT Variable tests ====================
+
+    def test_default_prompt_pg(self, shell):
+        prompt = shell.get_prompt()
+        assert "C:\\>" in prompt
+
+    def test_prompt_pg(self, shell):
+        shell.execute_command("PROMPT $P$G")
+        prompt = shell.get_prompt()
+        assert "C:\\>" in prompt
+
+    def test_prompt_custom_text(self, shell):
+        shell.environment["PROMPT"] = "Hello>"
+        prompt = shell.get_prompt()
+        assert prompt == "Hello>"
+
+    def test_prompt_dollar_n(self, shell):
+        shell.execute_command("PROMPT $N$G")
+        prompt = shell.get_prompt()
+        assert prompt == "C>"
+
+    def test_prompt_dollar_d(self, shell):
+        shell.execute_command("PROMPT $D$G")
+        prompt = shell.get_prompt()
+        assert ">" in prompt
+        assert "/" in prompt
+
+    def test_prompt_dollar_dollar(self, shell):
+        shell.execute_command("PROMPT $$test$$")
+        prompt = shell.get_prompt()
+        assert prompt == "$test$"
+
+    def test_prompt_in_subdirectory(self, shell):
+        shell.fs.make_directory("SUB")
+        shell.fs.change_directory("SUB")
+        shell.execute_command("PROMPT $P$G")
+        prompt = shell.get_prompt()
+        assert "C:\\SUB>" in prompt
+
+    # ==================== Batch Labels tests ====================
+
+    def test_labels_are_case_insensitive(self, shell):
+        batch = """GOTO MyLabel
+ECHO Skipped
+:MYLABEL
+ECHO Found"""
+        shell.fs.write_file("test.bat", batch)
+        shell._output_capture.clear()
+        shell.execute_command("TEST")
+        output = "\n".join(shell._output_capture)
+        assert "Found" in output
+        assert "Skipped" not in output
+
+    def test_label_with_underscore(self, shell):
+        batch = """GOTO MY_LABEL
+ECHO Skipped
+:MY_LABEL
+ECHO Found"""
+        shell.fs.write_file("test.bat", batch)
+        shell._output_capture.clear()
+        shell.execute_command("TEST")
+        output = "\n".join(shell._output_capture)
+        assert "Found" in output
+        assert "Skipped" not in output
+
+    def test_multiple_gotos(self, shell):
+        batch = """GOTO SECOND
+:FIRST
+ECHO First
+GOTO END
+:SECOND
+ECHO Second
+GOTO FIRST
+:END
+ECHO Done"""
+        shell.fs.write_file("test.bat", batch)
+        shell._output_capture.clear()
+        shell.execute_command("TEST")
+        output = "\n".join(shell._output_capture)
+        assert "Second" in output
+        assert "First" in output
+        assert "Done" in output
+
+    # ==================== IF EXIST Directory tests ====================
+
+    def test_if_exist_directory(self, shell):
+        shell.fs.make_directory("MYDIR")
+        batch = """IF EXIST MYDIR ECHO DirFound
+ECHO Done"""
+        shell.fs.write_file("test.bat", batch)
+        shell._output_capture.clear()
+        shell.execute_command("TEST")
+        output = "\n".join(shell._output_capture)
+        assert "DirFound" in output
+
+    # ==================== Batch Variables in Batch tests ====================
+
+    def test_set_and_use_in_batch(self, shell):
+        batch = """SET NAME=World
+ECHO Hello %NAME%"""
+        shell.fs.write_file("test.bat", batch)
+        shell._output_capture.clear()
+        shell.execute_command("TEST")
+        output = "\n".join(shell._output_capture)
+        assert "Hello World" in output
+
+    def test_batch_params_with_env_vars(self, shell):
+        batch = """ECHO %1
+SET FILE=%1
+ECHO %FILE%"""
+        shell.fs.write_file("test.bat", batch)
+        shell._output_capture.clear()
+        shell.execute_command("TEST mydata")
+        output = "\n".join(shell._output_capture)
+        assert "mydata" in output
+
+    # ==================== Combined Batch Features tests ====================
+
+    def test_if_goto_for(self, shell):
+        batch = """IF 1==1 GOTO PROCESS
+ECHO Skip
+:PROCESS
+FOR %%I IN (x y z) DO ECHO %%I"""
+        shell.fs.write_file("test.bat", batch)
+        shell._output_capture.clear()
+        shell.execute_command("TEST")
+        output = "\n".join(shell._output_capture)
+        assert "Skip" not in output
+        assert "x" in output
+        assert "y" in output
+        assert "z" in output
+
+    def test_for_with_if(self, shell):
+        shell.fs.write_file("a.txt", "content a")
+        shell.fs.write_file("b.txt", "content b")
+        batch = """FOR %%F IN (a.txt b.txt) DO IF EXIST %%F ECHO Found %%F"""
+        shell.fs.write_file("test.bat", batch)
+        shell._output_capture.clear()
+        shell.execute_command("TEST")
+        output = "\n".join(shell._output_capture)
+        assert "Found a.txt" in output
+        assert "Found b.txt" in output
