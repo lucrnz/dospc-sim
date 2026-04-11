@@ -6,10 +6,8 @@ import socket
 import threading
 import logging
 from pathlib import Path
-from typing import Optional, Callable, Dict
-from io import StringIO
+from typing import Optional
 
-import paramiko
 from paramiko import RSAKey, Transport, ServerInterface
 from paramiko.common import (
     AUTH_SUCCESSFUL,
@@ -158,6 +156,20 @@ class SSHClientHandler(threading.Thread):
         # Create DOS shell
         self.shell = DOSShell(fs, user.username, output_callback)
 
+        input_line_buffer = []
+
+        def input_callback():
+            try:
+                data = channel.recv(1024)
+                if data:
+                    input_line_buffer.append(
+                        data.decode("utf-8", errors="ignore").strip()
+                    )
+            except:
+                pass
+
+        self.shell._input_callback = input_callback
+
         # Set up the editor handler
         self.shell.set_editor_handler(
             lambda filename: self._run_editor(channel, fs, filename)
@@ -166,50 +178,207 @@ class SSHClientHandler(threading.Thread):
         self.shell.run()
 
         # Send welcome message
-        channel.send(f"\r\nDOS Environment\r\n\r\n")
+        channel.send("\r\nDOS Environment\r\n\r\n")
         channel.send(f"Welcome, {user.username}!\r\n")
-        channel.send(f"Type HELP for available commands.\r\n\r\n")
+        channel.send("Type HELP for available commands.\r\n\r\n")
 
-        # Main command loop
+        # Line editor state
         command_buffer = ""
+        cursor_pos = 0
+        history: list[str] = []
+        history_index = len(history)
+
+        def refresh_line():
+            nonlocal command_buffer, cursor_pos
+            prompt = self.shell.get_prompt()
+            # Move to start of prompt, clear to end, redraw
+            channel.send(f"\r\x1b[K{prompt}{command_buffer}")
+            if cursor_pos < len(command_buffer):
+                channel.send(f"\x1b[{len(command_buffer) - cursor_pos}D")
+
         prompt = self.shell.get_prompt()
         channel.send(prompt)
 
         while self.shell.running and not channel.closed:
             try:
-                # Receive data
                 data = channel.recv(1024)
                 if not data:
                     break
 
-                # Process each character
-                for char in data.decode("utf-8", errors="ignore"):
-                    if char == "\r" or char == "\n":
-                        # Execute command
+                i = 0
+                raw = data
+                while i < len(raw):
+                    b = raw[i]
+
+                    if b == 0x1B:  # ESC sequence
+                        seq = bytes([b])
+                        i += 1
+                        while i < len(raw) and len(seq) < 8:
+                            seq += bytes([raw[i]])
+                            i += 1
+                            # Check if this is a complete ANSI sequence
+                            if len(seq) == 2 and seq[1] in (0x4F, 0x5B):
+                                continue
+                            if (
+                                len(seq) >= 3
+                                and chr(seq[-1]).isalpha()
+                                or seq[-1] == ord("~")
+                            ):
+                                break
+                        else:
+                            # Need more data - wait briefly
+                            try:
+                                ready, _, _ = select.select([channel], [], [], 0.05)
+                                if ready:
+                                    more = channel.recv(16)
+                                    raw = raw[:i] + more + raw[i:]
+                                    continue
+                            except:
+                                pass
+
+                        # Parse the escape sequence
+                        seq_str = seq.decode("utf-8", errors="ignore")
+
+                        if seq_str == "\x1b[A":  # Up arrow
+                            if history and history_index > 0:
+                                history_index -= 1
+                                command_buffer = history[history_index]
+                                cursor_pos = len(command_buffer)
+                                refresh_line()
+                        elif seq_str == "\x1b[B":  # Down arrow
+                            if history_index < len(history) - 1:
+                                history_index += 1
+                                command_buffer = history[history_index]
+                            else:
+                                history_index = len(history)
+                                command_buffer = ""
+                            cursor_pos = len(command_buffer)
+                            refresh_line()
+                        elif seq_str == "\x1b[C":  # Right arrow
+                            if cursor_pos < len(command_buffer):
+                                cursor_pos += 1
+                                channel.send("\x1b[C")
+                        elif seq_str == "\x1b[D":  # Left arrow
+                            if cursor_pos > 0:
+                                cursor_pos -= 1
+                                channel.send("\x1b[D")
+                        elif seq_str in ("\x1b[H", "\x1b[1~", "\x1bOH"):  # Home
+                            if cursor_pos > 0:
+                                channel.send(f"\x1b[{cursor_pos}D")
+                                cursor_pos = 0
+                        elif seq_str in ("\x1b[F", "\x1b[4~", "\x1bOF"):  # End
+                            if cursor_pos < len(command_buffer):
+                                channel.send(
+                                    f"\x1b[{len(command_buffer) - cursor_pos}C"
+                                )
+                                cursor_pos = len(command_buffer)
+                        elif seq_str in ("\x1b[3~",):  # Delete
+                            if cursor_pos < len(command_buffer):
+                                command_buffer = (
+                                    command_buffer[:cursor_pos]
+                                    + command_buffer[cursor_pos + 1 :]
+                                )
+                                # Redraw from cursor
+                                channel.send(command_buffer[cursor_pos:] + " ")
+                                channel.send(
+                                    f"\x1b[{len(command_buffer) - cursor_pos + 1}D"
+                                )
+                        continue
+
+                    if b == 0x0D or b == 0x0A:  # Enter
+                        i += 1
+                        # Skip LF after CR
+                        if i < len(raw) and raw[i] == 0x0A:
+                            i += 1
                         channel.send("\r\n")
                         if command_buffer.strip():
                             logger.info(
                                 f"User {user.username} executed: {command_buffer.strip()}"
                             )
-                            self.shell.execute_command(command_buffer)
+                            self.shell.execute_command(command_buffer.strip())
+                            history.append(command_buffer.strip())
+                            history_index = len(history)
                         command_buffer = ""
+                        cursor_pos = 0
                         if self.shell.running:
                             prompt = self.shell.get_prompt()
                             channel.send(prompt)
-                    elif char == "\x7f" or char == "\b":  # Backspace
-                        if command_buffer:
-                            command_buffer = command_buffer[:-1]
-                            channel.send("\b \b")
-                    elif char == "\x03":  # Ctrl+C
+                        continue
+
+                    if b == 0x7F or b == 0x08:  # Backspace
+                        i += 1
+                        if cursor_pos > 0:
+                            command_buffer = (
+                                command_buffer[: cursor_pos - 1]
+                                + command_buffer[cursor_pos:]
+                            )
+                            cursor_pos -= 1
+                            channel.send("\b" + command_buffer[cursor_pos:] + " ")
+                            move_back = len(command_buffer) - cursor_pos + 1
+                            channel.send(f"\x1b[{move_back}D")
+                        continue
+
+                    if b == 0x03:  # Ctrl+C
+                        i += 1
                         channel.send("^C\r\n")
                         command_buffer = ""
-                        prompt = self.shell.get_prompt()
-                        channel.send(prompt)
-                    elif char == "\x04":  # Ctrl+D
+                        cursor_pos = 0
+                        history_index = len(history)
+                        if self.shell.running:
+                            prompt = self.shell.get_prompt()
+                            channel.send(prompt)
+                        continue
+
+                    if b == 0x04:  # Ctrl+D
                         break
-                    elif char.isprintable():
-                        command_buffer += char
-                        channel.send(char)
+
+                    if b == 0x09:  # Tab - autocomplete
+                        i += 1
+                        completions = self._tab_complete(
+                            fs, self.shell, command_buffer, cursor_pos
+                        )
+                        if len(completions) == 1:
+                            # Replace the last word with the completion
+                            prefix = command_buffer[:cursor_pos]
+                            last_space = prefix.rfind(" ")
+                            if last_space >= 0:
+                                before = prefix[: last_space + 1]
+                            else:
+                                before = ""
+                            new_word = completions[0]
+                            after = command_buffer[cursor_pos:]
+                            command_buffer = before + new_word + after
+                            cursor_pos = len(before) + len(new_word)
+                            refresh_line()
+                        elif len(completions) > 1:
+                            channel.send("\r\n")
+                            # Display completions in columns
+                            max_len = max(len(c) for c in completions) + 2
+                            cols = max(1, 80 // max_len)
+                            for j in range(0, len(completions), cols):
+                                row = completions[j : j + cols]
+                                channel.send(
+                                    "  ".join(f"{c:<{max_len}}" for c in row) + "\r\n"
+                                )
+                            refresh_line()
+                        continue
+
+                    if b >= 0x20 and b < 0x7F:  # Printable char
+                        ch = chr(b)
+                        i += 1
+                        command_buffer = (
+                            command_buffer[:cursor_pos]
+                            + ch
+                            + command_buffer[cursor_pos:]
+                        )
+                        cursor_pos += 1
+                        # Echo the char and redraw after cursor
+                        channel.send(ch + command_buffer[cursor_pos:])
+                        if len(command_buffer) - cursor_pos > 0:
+                            channel.send(f"\x1b[{len(command_buffer) - cursor_pos}D")
+                        continue
+
+                    i += 1  # skip unknown bytes
 
             except Exception as e:
                 logger.error(f"Error in shell for {user.username}: {e}")
@@ -218,13 +387,95 @@ class SSHClientHandler(threading.Thread):
         logger.info(f"Session ended for user {user.username} from {self.address[0]}")
         channel.send("\r\nGoodbye!\r\n")
 
+    @staticmethod
+    def _tab_complete(
+        fs: UserFilesystem, shell: DOSShell, buffer: str, cursor_pos: int
+    ) -> list[str]:
+        """Generate tab completions for the current buffer."""
+        prefix = buffer[:cursor_pos]
+        last_space = prefix.rfind(" ")
+
+        if last_space < 0:
+            # Completing a command name
+            partial = prefix.upper()
+            commands = [
+                "CALL",
+                "CD",
+                "CHDIR",
+                "CLS",
+                "COPY",
+                "DATE",
+                "DEL",
+                "DIR",
+                "ECHO",
+                "EDIT",
+                "ERASE",
+                "EXIT",
+                "FC",
+                "FIND",
+                "FOR",
+                "GOTO",
+                "HELP",
+                "IF",
+                "MD",
+                "MKDIR",
+                "MORE",
+                "MOVE",
+                "PATH",
+                "PAUSE",
+                "PROMPT",
+                "RD",
+                "REN",
+                "RENAME",
+                "RMDIR",
+                "SET",
+                "SORT",
+                "TIME",
+                "TREE",
+                "TYPE",
+                "VER",
+            ]
+            matches = [c for c in commands if c.startswith(partial)]
+            # Also check batch files
+            try:
+                entries = fs.list_directory(".")
+                for e in entries:
+                    upper_name = e.name.upper()
+                    if upper_name.endswith((".BAT", ".CMD")):
+                        base = upper_name.rsplit(".", 1)[0]
+                        if base.startswith(partial):
+                            matches.append(base)
+            except:
+                pass
+            return matches
+        else:
+            # Completing a filename/path
+            partial = prefix[last_space + 1 :]
+            try:
+                # Handle path with directory component
+                if "\\" in partial or "/" in partial:
+                    sep_idx = max(partial.rfind("\\"), partial.rfind("/"))
+                    dir_part = partial[: sep_idx + 1]
+                    file_prefix = partial[sep_idx + 1 :].upper()
+                else:
+                    dir_part = ""
+                    file_prefix = partial.upper()
+
+                entries = fs.list_directory(dir_part if dir_part else ".")
+                matches = []
+                for e in entries:
+                    if e.name.upper().startswith(file_prefix):
+                        if dir_part:
+                            matches.append(dir_part + e.name)
+                        else:
+                            matches.append(e.name + ("\\" if e.is_dir else ""))
+                return matches
+            except:
+                return []
+
     def _run_editor(self, channel, fs, filename: str) -> int:
         """Run the text editor over the SSH channel."""
         from dospc_sim.editor import TextEditor
-
-        # Request pseudo-terminal with proper settings
-        # Set terminal type and modes for proper display
-        term_type = "xterm-256color"
 
         def editor_output(text: str):
             """Send output to the channel."""
