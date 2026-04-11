@@ -8,6 +8,10 @@ This project uses `uv` for dependency management (`uv sync`, `uv run`).
 
 Follow conventional commits
 
+## Architecture
+
+All DOS/BATCH interpreter features should go through the LARK grammar + AST.
+
 ## Commands
 
 Run tests: `uv run pytest`
