@@ -167,6 +167,7 @@ class TextEditor:
 
     def _handle_escape_sequence(self, seq: str) -> None:
         """Handle ANSI escape sequences."""
+        # Arrow keys
         if seq == "\x1b[A":  # Up arrow
             self._move_cursor_up()
         elif seq == "\x1b[B":  # Down arrow
@@ -175,18 +176,26 @@ class TextEditor:
             self._move_cursor_right()
         elif seq == "\x1b[D":  # Left arrow
             self._move_cursor_left()
-        elif seq == "\x1b[H":  # Home
+        # Home key - multiple variants for different terminals
+        elif seq in ("\x1b[H", "\x1b[1~", "\x1bOH"):
             self.cursor_col = 0
             self._draw_screen()
-        elif seq == "\x1b[F":  # End
+        # End key - multiple variants for different terminals
+        elif seq in ("\x1b[F", "\x1b[4~", "\x1bOF"):
             if self.cursor_row < len(self.lines):
                 self.cursor_col = len(self.lines[self.cursor_row])
             self._draw_screen()
-        elif seq == "\x1b[3~":  # Delete key
+        # Insert key
+        elif seq == "\x1b[2~":
+            pass  # Insert mode not implemented
+        # Delete key
+        elif seq == "\x1b[3~":
             self._delete_char()
-        elif seq == "\x1b[5~":  # Page Up
+        # Page Up
+        elif seq == "\x1b[5~":
             self._page_up()
-        elif seq == "\x1b[6~":  # Page Down
+        # Page Down
+        elif seq == "\x1b[6~":
             self._page_down()
 
     def _insert_char(self, char: str) -> None:
