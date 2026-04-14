@@ -34,9 +34,8 @@ class TextEditor:
         # Switch to alternate screen buffer
         self._out("\x1b[?1049h")
         self._alternate_screen = True
-        # Clear screen and hide cursor
+        # Clear screen and move to home
         self._out("\x1b[2J\x1b[H")
-        self._out("\x1b[?25l")  # Hide cursor during redraw
 
     def _reset_terminal(self) -> None:
         """Reset terminal to normal state."""
@@ -386,8 +385,9 @@ class TextEditor:
         # Build screen buffer for atomic output
         screen_lines = []
 
-        # Move to home position (no clear - we're in alternate buffer)
-        screen_lines.append("\x1b[H")
+        # Clear screen and move to home position
+        # This overwrites any local echo artifacts from the PTY
+        screen_lines.append("\x1b[2J\x1b[H")
 
         # Draw title bar with inverse video
         title = "DOSPC SIM EDIT"
@@ -422,11 +422,16 @@ class TextEditor:
         self._out(screen_content)
 
         # Position cursor (separate to ensure it's after screen content)
+        # Screen layout: row 1 = (empty after clear), row 2 = title bar,
+        # rows 3-23 = text area, row 24 = status bar
+        # The clear code + newline puts title on row 2, text starts on row 3
         cursor_screen_row = (
-            self.cursor_row - start_row + 2
-        )  # +2 for title bar (1-indexed)
-        cursor_screen_col = self.cursor_col + 6  # +6 for line number (1-indexed)
+            self.cursor_row - start_row + 3
+        )  # +3 for title bar offset (1-indexed)
+        cursor_screen_col = self.cursor_col + 6  # +6 for line number prefix (1-indexed)
         self._out(f"\x1b[{cursor_screen_row};{cursor_screen_col}H")
+        # Ensure cursor is visible
+        self._out("\x1b[?25h")
 
 
 def run_editor(
