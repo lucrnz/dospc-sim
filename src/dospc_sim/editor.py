@@ -132,34 +132,38 @@ class TextEditor:
 
     def _handle_key(self, key: str) -> None:
         """Handle a single keypress."""
-        if len(key) == 1:
-            # Regular character
-            if ord(key) >= 32 and ord(key) < 127:
-                self._insert_char(key)
-            elif key == "\r" or key == "\n":
-                self._insert_newline()
-            elif ord(key) == 27:  # Escape
-                self._show_help()
-            elif ord(key) == 8 or ord(key) == 127:  # Backspace
-                self._backspace()
-            elif ord(key) == 9:  # Tab
-                self._insert_char("    ")
-        elif key.startswith("\x1b["):
+        if key.startswith("\x1b["):
             # ANSI escape sequence (arrow keys, etc.)
             self._handle_escape_sequence(key)
-        elif key == "\x11" or key == "\x03":  # Ctrl+Q
-            self._quit()
-        elif key == "\x13":  # Ctrl+S
-            self.save_file()
-            self._draw_screen()
-        elif key == "\x0f":  # Ctrl+O (Open)
-            self._prompt_open()
-        elif key == "\x01":  # Ctrl+A (Save As)
-            self._prompt_save_as()
-        elif key == "\x08":  # Ctrl+H (Help)
-            self._show_help()
-        elif key == "\x7f":  # Delete
-            self._delete_char()
+            return
+
+        if len(key) == 1:
+            code = ord(key)
+
+            # Ctrl key combinations (codes 0-31)
+            if code == 0x03 or code == 0x11:  # Ctrl+C / Ctrl+Q - quit
+                self._quit()
+            elif code == 0x13:  # Ctrl+S - save
+                self.save_file()
+                self._draw_screen()
+            elif code == 0x0F:  # Ctrl+O - open file
+                self._prompt_open()
+            elif code == 0x01:  # Ctrl+A - save as
+                self._prompt_save_as()
+            elif code == 0x08:  # Backspace (also Ctrl+H)
+                self._backspace()
+            # Regular printable characters
+            elif code >= 32 and code < 127:
+                self._insert_char(key)
+            # Special keys
+            elif code == 0x0D or code == 0x0A:  # Enter (\r or \n)
+                self._insert_newline()
+            elif code == 0x1B:  # Escape
+                self._show_help()
+            elif code == 0x7F:  # DEL (127) - backspace on some terminals
+                self._backspace()
+            elif code == 0x09:  # Tab
+                self._insert_char("    ")
 
     def _handle_escape_sequence(self, seq: str) -> None:
         """Handle ANSI escape sequences."""
