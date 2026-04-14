@@ -495,8 +495,8 @@ class SSHClientHandler(threading.Thread):
                         # Escape sequence - read more
                         if len(buf) == 1:
                             # Could be ESC key or start of sequence
-                            # Wait a tiny bit for more data
-                            ready, _, _ = select.select([channel], [], [], 0.05)
+                            # Wait for more data (increased timeout for VSCode terminal)
+                            ready, _, _ = select.select([channel], [], [], 0.1)
                             if not ready:
                                 # No more data, it's just ESC
                                 return buf.decode("utf-8", errors="ignore")
@@ -507,13 +507,14 @@ class SSHClientHandler(threading.Thread):
                         elif len(buf) >= 3:
                             # Check for complete sequence
                             # Arrow keys: \x1b[A, \x1b[B, etc.
-                            # Home/End: \x1b[H, \x1b[F
+                            # Home/End: \x1b[H, \x1b[F, \x1bOH, \x1bOF
+                            # VT-style: \x1b[1~, \x1b[4~ (Home/End in some terminals)
                             # Page keys: \x1b[5~, \x1b[6~
                             # Delete: \x1b[3~
                             if buf[2:3] in b"ABCDEFHOPQRS":
                                 return buf.decode("utf-8", errors="ignore")
                             elif buf[2:3] in b"123456789":
-                                # Could be \x1b[3~ etc.
+                                # Could be \x1b[1~ etc.
                                 if len(buf) >= 4 and buf[3:4] == b"~":
                                     return buf.decode("utf-8", errors="ignore")
                                 continue
