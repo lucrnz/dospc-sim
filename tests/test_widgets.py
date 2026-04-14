@@ -12,13 +12,13 @@ class TestComingSoonScreenContent:
     def test_screen_full_size(self):
         """Test that screen CSS defines full size."""
         # Check CSS defines full width/height
-        assert "width: 100%" in ComingSoonScreen.DEFAULT_CSS
-        assert "height: 100%" in ComingSoonScreen.DEFAULT_CSS
+        assert 'width: 100%' in ComingSoonScreen.DEFAULT_CSS
+        assert 'height: 100%' in ComingSoonScreen.DEFAULT_CSS
 
     def test_screen_centered_content(self):
         """Test that screen content is centered."""
         # Check the CSS defines centered content
-        assert "content-align: center middle" in ComingSoonScreen.DEFAULT_CSS
+        assert 'content-align: center middle' in ComingSoonScreen.DEFAULT_CSS
 
     @pytest.mark.asyncio
     async def test_version_in_content(self):
@@ -32,7 +32,7 @@ class TestComingSoonScreenContent:
 
             labels = list(screen.query(Label))
             label_texts = [str(label.render()) for label in labels]
-            assert any("v1.0" in text for text in label_texts)
+            assert any('v1.0' in text for text in label_texts)
 
 
 class TestAccessibility:

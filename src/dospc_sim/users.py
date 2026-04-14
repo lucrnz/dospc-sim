@@ -7,9 +7,9 @@ import secrets
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-DATA_DIR = Path("data")
-USERS_FILE = DATA_DIR / "users.json"
-USERS_DIR = DATA_DIR / "users"
+DATA_DIR = Path('data')
+USERS_FILE = DATA_DIR / 'users.json'
+USERS_DIR = DATA_DIR / 'users'
 
 
 @dataclass
@@ -30,8 +30,8 @@ class UserManager:
 
     def __init__(self, data_dir: Path = DATA_DIR):
         self.data_dir = data_dir
-        self.users_file = data_dir / "users.json"
-        self.users_dir = data_dir / "users"
+        self.users_file = data_dir / 'users.json'
+        self.users_dir = data_dir / 'users'
         self._users: dict[str, User] = {}
         self._ensure_directories()
         self._load_users()
@@ -55,7 +55,7 @@ class UserManager:
     def _save_users(self) -> None:
         """Save users to JSON file."""
         data = {username: asdict(user) for username, user in self._users.items()}
-        with open(self.users_file, "w") as f:
+        with open(self.users_file, 'w') as f:
             json.dump(data, f, indent=2)
 
     def _hash_password(self, password: str, salt: str | None = None) -> tuple:
@@ -64,21 +64,21 @@ class UserManager:
             salt = secrets.token_hex(16)
         # Use PBKDF2 for secure password hashing
         hash_value = hashlib.pbkdf2_hmac(
-            "sha256", password.encode("utf-8"), salt.encode("utf-8"), 100000
+            'sha256', password.encode('utf-8'), salt.encode('utf-8'), 100000
         ).hex()
         return hash_value, salt
 
     def create_user(self, username: str, password: str) -> User:
         """Create a new user with home directory."""
         if not username or not password:
-            raise ValueError("Username and password are required")
+            raise ValueError('Username and password are required')
 
         if username in self._users:
             raise ValueError(f"User '{username}' already exists")
 
         # Validate username (alphanumeric and underscore only)
-        if not username.replace("_", "").isalnum():
-            raise ValueError("Username must be alphanumeric (underscores allowed)")
+        if not username.replace('_', '').isalnum():
+            raise ValueError('Username must be alphanumeric (underscores allowed)')
 
         # Create home directory
         from datetime import datetime
@@ -108,13 +108,13 @@ class UserManager:
     def _create_default_structure(self, home_dir: str) -> None:
         """Create default DOS directory structure."""
         # Create common DOS directories
-        dirs = ["DOCS", "GAMES", "TEMP", "CONFIG"]
+        dirs = ['DOCS', 'GAMES', 'TEMP', 'CONFIG']
         for d in dirs:
             os.makedirs(os.path.join(home_dir, d), exist_ok=True)
 
         # Create a welcome file
-        welcome_path = os.path.join(home_dir, "WELCOME.TXT")
-        with open(welcome_path, "w") as f:
+        welcome_path = os.path.join(home_dir, 'WELCOME.TXT')
+        with open(welcome_path, 'w') as f:
             f.write("""Welcome to DosPC Sim DOS Environment
 ==================================
 

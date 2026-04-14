@@ -29,11 +29,11 @@ class TestDosPCSimApp:
         assert len(bindings) >= 3
 
         # Check for quit binding (bindings are tuples: (key, action, description))
-        quit_bindings = [b for b in bindings if b[1] == "quit"]
+        quit_bindings = [b for b in bindings if b[1] == 'quit']
         assert len(quit_bindings) > 0
 
         # Check for theme toggle binding
-        theme_bindings = [b for b in bindings if b[1] == "toggle_theme"]
+        theme_bindings = [b for b in bindings if b[1] == 'toggle_theme']
         assert len(theme_bindings) > 0
 
     def test_action_toggle_theme(self, app):
@@ -87,7 +87,7 @@ class TestComingSoonScreen:
             label_texts = [str(label.render()) for label in labels]
 
             # Check that DOSPC SIM is in one of the labels
-            assert any("DOSPC SIM" in text for text in label_texts)
+            assert any('DOSPC SIM' in text for text in label_texts)
 
     @pytest.mark.asyncio
     async def test_screen_coming_soon_present(self):
@@ -101,7 +101,7 @@ class TestComingSoonScreen:
             label_texts = [str(label.render()) for label in labels]
 
             # Check that COMING SOON is in one of the labels
-            assert any("COMING SOON" in text for text in label_texts)
+            assert any('COMING SOON' in text for text in label_texts)
 
 
 class TestMainFunction:

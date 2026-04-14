@@ -221,3 +221,10 @@ __marimo__/
 data/
 !data/.gitkeep
 
+# Archives
+*.tar
+*.tar.gz
+
+# macOS
+.DS_Store
+

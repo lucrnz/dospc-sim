@@ -47,13 +47,13 @@ class TestAppIntegration:
             initial_dark = app.dark_mode
 
             # Press 't' to toggle theme
-            await pilot.press("t")
+            await pilot.press('t')
 
             # Check theme changed
             assert app.dark_mode != initial_dark
 
             # Press 't' again to toggle back
-            await pilot.press("t")
+            await pilot.press('t')
             assert app.dark_mode == initial_dark
 
     async def test_quit_key_binding(self, app):
@@ -63,7 +63,7 @@ class TestAppIntegration:
             assert app.is_mounted
 
             # Press 'q' to quit
-            await pilot.press("q")
+            await pilot.press('q')
 
             # App should be closed
             assert not app.is_running

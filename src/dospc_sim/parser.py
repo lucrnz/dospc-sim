@@ -62,7 +62,7 @@ class Switch:
 
     @property
     def value(self) -> str:
-        return f"/{self.name}"
+        return f'/{self.name}'
 
 
 @dataclass
@@ -246,15 +246,15 @@ class _DOSTransformer(Transformer):
 
     @v_args(inline=True)
     def write_redirect(self, target):
-        return {"type": "stdout", "target": _strip_quotes(str(target))}
+        return {'type': 'stdout', 'target': _strip_quotes(str(target))}
 
     @v_args(inline=True)
     def append_redirect(self, target):
-        return {"type": "append", "target": _strip_quotes(str(target))}
+        return {'type': 'append', 'target': _strip_quotes(str(target))}
 
     @v_args(inline=True)
     def stdin_redirect(self, target):
-        return {"type": "stdin", "target": _strip_quotes(str(target))}
+        return {'type': 'stdin', 'target': _strip_quotes(str(target))}
 
     def PIPE(self, token):
         return token
@@ -302,7 +302,7 @@ def _parse_redirects(line: str):
 # Echo handling (pre-parser)
 # ---------------------------------------------------------------------------
 
-_ECHO_RE = re.compile(r"^ECHO\s*(.*)", re.IGNORECASE)
+_ECHO_RE = re.compile(r'^ECHO\s*(.*)', re.IGNORECASE)
 
 
 def _parse_echo(line: str) -> EchoCommand | None:
@@ -312,9 +312,9 @@ def _parse_echo(line: str) -> EchoCommand | None:
     rest = m.group(1).strip()
     if not rest:
         return EchoCommand(text=None, on=None)
-    if rest.upper() == "ON":
+    if rest.upper() == 'ON':
         return EchoCommand(text=None, on=True)
-    if rest.upper() == "OFF":
+    if rest.upper() == 'OFF':
         return EchoCommand(text=None, on=False)
     if (rest.startswith('"') and rest.endswith('"')) or (
         rest.startswith("'") and rest.endswith("'")
@@ -327,17 +327,17 @@ def _parse_echo(line: str) -> EchoCommand | None:
 # Batch control flow parsing (pre-parser, produces AST nodes)
 # ---------------------------------------------------------------------------
 
-_GOTO_RE = re.compile(r"^GOTO\s+(\S+)$", re.IGNORECASE)
-_CALL_RE = re.compile(r"^CALL\s+(.+)$", re.IGNORECASE)
-_PAUSE_RE = re.compile(r"^PAUSE\s*$", re.IGNORECASE)
+_GOTO_RE = re.compile(r'^GOTO\s+(\S+)$', re.IGNORECASE)
+_CALL_RE = re.compile(r'^CALL\s+(.+)$', re.IGNORECASE)
+_PAUSE_RE = re.compile(r'^PAUSE\s*$', re.IGNORECASE)
 
 _IF_RE = re.compile(
-    r"^IF\s+(NOT\s+)?(EXIST\s+(\S+)|ERRORLEVEL\s+(\d+)|(\S+)\s*==\s*(\S+))\s+(.+)$",
+    r'^IF\s+(NOT\s+)?(EXIST\s+(\S+)|ERRORLEVEL\s+(\d+)|(\S+)\s*==\s*(\S+))\s+(.+)$',
     re.IGNORECASE,
 )
 
 _FOR_RE = re.compile(
-    r"^FOR\s+%%([A-Za-z])\s+IN\s*\(([^)]+)\)\s+DO\s+(.+)$",
+    r'^FOR\s+%%([A-Za-z])\s+IN\s*\(([^)]+)\)\s+DO\s+(.+)$',
     re.IGNORECASE,
 )
 
@@ -427,7 +427,7 @@ def _parse_simple(line: str) -> SimpleCommand | None:
     name = CommandName(name=parts[0].upper())
     args: list[Argument | Switch] = []
     for p in parts[1:]:
-        if p.startswith("/"):
+        if p.startswith('/'):
             args.append(Switch(name=p[1:].upper()))
         else:
             args.append(Argument(value=_strip_quotes(p)))
@@ -435,7 +435,7 @@ def _parse_simple(line: str) -> SimpleCommand | None:
 
 
 def _first_word_upper(line: str) -> str:
-    return line.upper().split()[0] if line.split() else ""
+    return line.upper().split()[0] if line.split() else ''
 
 
 # ---------------------------------------------------------------------------
@@ -444,8 +444,8 @@ def _first_word_upper(line: str) -> str:
 
 _parser = Lark(
     _DOS_GRAMMAR,
-    parser="earley",
-    ambiguity="resolve",
+    parser='earley',
+    ambiguity='resolve',
     maybe_placeholders=False,
 )
 
@@ -454,7 +454,7 @@ _transformer = _DOSTransformer()
 
 def _parse_via_lark(line: str) -> CommandLine | None:
     """Parse using the Lark grammar (regular commands + pipes + redirects)."""
-    tree = _parser.parse(line + "\n")
+    tree = _parser.parse(line + '\n')
     result = _transformer.transform(tree)
     if isinstance(result, BatchProgram) and result.lines:
         cl = result.lines[0]
@@ -474,7 +474,7 @@ def parse_command(line: str) -> CommandLine | None:
 
     line = line.strip()
 
-    if line.startswith("::") or line.upper().startswith("REM "):
+    if line.startswith('::') or line.upper().startswith('REM '):
         return None
 
     # Extract redirects before any parsing
@@ -483,8 +483,8 @@ def parse_command(line: str) -> CommandLine | None:
         return None
 
     # Labels
-    if line.startswith(":"):
-        label_match = re.match(r"^:([A-Za-z_][A-Za-z0-9_]*)\s*$", line)
+    if line.startswith(':'):
+        label_match = re.match(r'^:([A-Za-z_][A-Za-z0-9_]*)\s*$', line)
         if label_match:
             return CommandLine(
                 command=Label(name=label_match.group(1).upper()),
@@ -497,7 +497,7 @@ def parse_command(line: str) -> CommandLine | None:
     first = _first_word_upper(line)
 
     # ECHO (takes rest of line as literal text)
-    if first == "ECHO":
+    if first == 'ECHO':
         echo = _parse_echo(line)
         if echo is not None:
             return CommandLine(
@@ -508,27 +508,27 @@ def parse_command(line: str) -> CommandLine | None:
             )
 
     # Batch control flow - parsed into AST nodes
-    if first == "GOTO":
+    if first == 'GOTO':
         result = _parse_goto(line)
         if result:
             return result
 
-    if first == "CALL":
+    if first == 'CALL':
         result = _parse_call(line)
         if result:
             return result
 
-    if first == "PAUSE":
+    if first == 'PAUSE':
         result = _parse_pause(line)
         if result:
             return result
 
-    if first == "IF":
+    if first == 'IF':
         result = _parse_if(line)
         if result:
             return result
 
-    if first == "FOR":
+    if first == 'FOR':
         result = _parse_for(line)
         if result:
             return result
@@ -555,7 +555,7 @@ def parse_batch(content: str) -> BatchProgram:
     commands: list[CommandLine] = []
     for line in lines:
         line = line.strip()
-        if not line or line.startswith("::") or line.upper().startswith("REM "):
+        if not line or line.startswith('::') or line.upper().startswith('REM '):
             continue
         cmd = parse_command(line)
         if cmd is not None:

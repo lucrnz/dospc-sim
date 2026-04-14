@@ -25,7 +25,7 @@ from dospc_sim.users import UserManager
 
 # Setup logging - use a queue to avoid TUI conflicts
 log_queue = queue.Queue()
-logger = logging.getLogger("dospc_sim")
+logger = logging.getLogger('dospc_sim')
 
 
 class QueueLogHandler(logging.Handler):
@@ -62,15 +62,15 @@ class ComingSoonScreen(Static):
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Label("╔══════════════════════════════════════╗", id="border-top")
-            yield Label("║                                      ║", id="border-mid1")
-            yield Label("║     🖥️  DOSPC SIM  v1.0              ║", id="title")
-            yield Label("║                                      ║", id="border-mid2")
-            yield Label("║     🚧 COMING SOON 🚧                ║", id="subtitle")
-            yield Label("║                                      ║", id="border-mid3")
-            yield Label("║     A retro computing experience     ║", id="description")
-            yield Label("║                                      ║", id="border-mid4")
-            yield Label("╚══════════════════════════════════════╝", id="border-bottom")
+            yield Label('╔══════════════════════════════════════╗', id='border-top')
+            yield Label('║                                      ║', id='border-mid1')
+            yield Label('║     🖥️  DOSPC SIM  v1.0              ║', id='title')
+            yield Label('║                                      ║', id='border-mid2')
+            yield Label('║     🚧 COMING SOON 🚧                ║', id='subtitle')
+            yield Label('║                                      ║', id='border-mid3')
+            yield Label('║     A retro computing experience     ║', id='description')
+            yield Label('║                                      ║', id='border-mid4')
+            yield Label('╚══════════════════════════════════════╝', id='border-bottom')
 
 
 class SSHControlPanel(Static):
@@ -120,23 +120,23 @@ class SSHControlPanel(Static):
     def compose(self) -> ComposeResult:
         with Vertical():
             # Control section
-            with Vertical(id="control-section"):
-                yield Label("🔐 SSH Server Control", id="panel-title")
+            with Vertical(id='control-section'):
+                yield Label('🔐 SSH Server Control', id='panel-title')
                 yield Label(
-                    "Status: Stopped", id="server-status", classes="status-stopped"
+                    'Status: Stopped', id='server-status', classes='status-stopped'
                 )
-                with Horizontal(classes="btn-container"):
-                    yield Button("▶ Start", id="btn-start", variant="success")
+                with Horizontal(classes='btn-container'):
+                    yield Button('▶ Start', id='btn-start', variant='success')
                     yield Button(
-                        "⏹ Stop", id="btn-stop", variant="error", disabled=True
+                        '⏹ Stop', id='btn-stop', variant='error', disabled=True
                     )
-                yield Label("Host: 0.0.0.0:2222", id="server-host")
-                yield Label("Active Connections: 0", id="active-connections")
+                yield Label('Host: 0.0.0.0:2222', id='server-host')
+                yield Label('Active Connections: 0', id='active-connections')
 
             # Log section
-            with Vertical(id="log-section"):
-                yield Label("📜 SSH Server Logs", id="log-title")
-                yield Log(id="ssh-log")
+            with Vertical(id='log-section'):
+                yield Label('📜 SSH Server Logs', id='log-title')
+                yield Log(id='ssh-log')
 
 
 class UserManagementPanel(Static):
@@ -162,17 +162,17 @@ class UserManagementPanel(Static):
     """
 
     def compose(self) -> ComposeResult:
-        yield Label("👥 User Management", id="panel-title")
-        with Vertical(id="user-form"):
-            yield Label("Create New User:")
-            yield Input(placeholder="Username", id="input-username")
-            yield Input(placeholder="Password", password=True, id="input-password")
+        yield Label('👥 User Management', id='panel-title')
+        with Vertical(id='user-form'):
+            yield Label('Create New User:')
+            yield Input(placeholder='Username', id='input-username')
+            yield Input(placeholder='Password', password=True, id='input-password')
             with Horizontal():
-                yield Button("Create User", id="btn-create-user", variant="primary")
-                yield Button("Refresh List", id="btn-refresh-users")
-        yield Label("")
-        yield Label("Existing Users:")
-        yield DataTable(id="users-table")
+                yield Button('Create User', id='btn-create-user', variant='primary')
+                yield Button('Refresh List', id='btn-refresh-users')
+        yield Label('')
+        yield Label('Existing Users:')
+        yield DataTable(id='users-table')
 
 
 class DosPCSimApp(App):
@@ -213,9 +213,9 @@ class DosPCSimApp(App):
     """
 
     BINDINGS: ClassVar[list] = [
-        ("q", "quit", "Quit"),
-        ("t", "toggle_theme", "Toggle Theme"),
-        ("f1", "help", "Help"),
+        ('q', 'quit', 'Quit'),
+        ('t', 'toggle_theme', 'Toggle Theme'),
+        ('f1', 'help', 'Help'),
     ]
 
     dark_mode = reactive(True)
@@ -231,11 +231,11 @@ class DosPCSimApp(App):
         # No menubar - using tabs instead
 
         with TabbedContent():
-            with TabPane("🏠 Home", id="tab-home"):
+            with TabPane('🏠 Home', id='tab-home'):
                 yield self._create_home_screen()
-            with TabPane("🔐 SSH Server", id="tab-ssh"):
+            with TabPane('🔐 SSH Server', id='tab-ssh'):
                 yield SSHControlPanel()
-            with TabPane("👥 Users", id="tab-users"):
+            with TabPane('👥 Users', id='tab-users'):
                 yield UserManagementPanel()
 
         yield Footer()
@@ -264,12 +264,12 @@ class DosPCSimApp(App):
 ║                                                                ║
 ╚════════════════════════════════════════════════════════════════╝
         """,
-            id="home-screen",
+            id='home-screen',
         )
 
     def on_mount(self) -> None:
-        self.title = "DosPC Sim"
-        self.sub_title = "SSH DOS Environment Server"
+        self.title = 'DosPC Sim'
+        self.sub_title = 'SSH DOS Environment Server'
 
         # Initialize SSH server (not started yet)
         self.ssh_server = SSHServer()
@@ -288,22 +288,22 @@ class DosPCSimApp(App):
         """Setup log handler to capture SSH logs."""
         try:
             # Store reference to log widget
-            self.log_widget = self.query_one("#ssh-log", Log)
+            self.log_widget = self.query_one('#ssh-log', Log)
 
             # Create queue-based handler
             self.log_handler = QueueLogHandler(log_queue)
             self.log_handler.setLevel(logging.INFO)
-            formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
             self.log_handler.setFormatter(formatter)
 
             # Add to loggers
-            logging.getLogger("dospc_sim").addHandler(self.log_handler)
-            logging.getLogger("dospc_sim.ssh").addHandler(self.log_handler)
+            logging.getLogger('dospc_sim').addHandler(self.log_handler)
+            logging.getLogger('dospc_sim.ssh').addHandler(self.log_handler)
 
             # Log startup message
-            logger.info("DosPC Sim UI started - SSH Server ready")
+            logger.info('DosPC Sim UI started - SSH Server ready')
         except Exception as e:
-            print(f"Failed to setup log handler: {e}")
+            print(f'Failed to setup log handler: {e}')
 
     def _poll_log_queue(self) -> None:
         """Poll the log queue and write to the Log widget."""
@@ -324,20 +324,20 @@ class DosPCSimApp(App):
     def _refresh_users_table(self) -> None:
         """Refresh the users table."""
         try:
-            table = self.query_one("#users-table", DataTable)
+            table = self.query_one('#users-table', DataTable)
             table.clear(columns=True)
-            table.add_columns("Username", "Created", "Last Login", "Home Directory")
+            table.add_columns('Username', 'Created', 'Last Login', 'Home Directory')
 
             for user in self.user_manager.list_users():
-                last_login = user.last_login or "Never"
+                last_login = user.last_login or 'Never'
                 table.add_row(
                     user.username,
                     user.created_at[:10],
-                    last_login[:10] if last_login != "Never" else last_login,
+                    last_login[:10] if last_login != 'Never' else last_login,
                     str(user.home_dir),
                 )
         except Exception as e:
-            logger.error(f"Failed to refresh users table: {e}")
+            logger.error(f'Failed to refresh users table: {e}')
 
     def watch_dark_mode(self, dark_mode: bool) -> None:
         """Watch for dark mode changes and update theme."""
@@ -352,13 +352,13 @@ class DosPCSimApp(App):
         self.refresh_css()
 
         # Log theme change
-        theme_name = "dark" if self.dark_mode else "light"
-        logger.info(f"Theme changed to {theme_name}")
+        theme_name = 'dark' if self.dark_mode else 'light'
+        logger.info(f'Theme changed to {theme_name}')
 
     def action_toggle_theme(self) -> None:
         """Toggle between light and dark themes."""
         self.dark_mode = not self.dark_mode
-        self.notify(f"Theme: {'Dark' if self.dark_mode else 'Light'}")
+        self.notify(f'Theme: {"Dark" if self.dark_mode else "Light"}')
 
     def action_help(self) -> None:
         """Show help information."""
@@ -368,48 +368,48 @@ class DosPCSimApp(App):
         """Handle button presses."""
         btn_id = event.button.id
 
-        if btn_id == "btn-start":
+        if btn_id == 'btn-start':
             self._start_ssh_server()
-        elif btn_id == "btn-stop":
+        elif btn_id == 'btn-stop':
             self._stop_ssh_server()
-        elif btn_id == "btn-create-user":
+        elif btn_id == 'btn-create-user':
             self._create_user()
-        elif btn_id == "btn-refresh-users":
+        elif btn_id == 'btn-refresh-users':
             self._refresh_users_table()
 
     def _start_ssh_server(self) -> None:
         """Start the SSH server."""
         if self.ssh_server and not self.ssh_server.is_running():
             if self.ssh_server.start():
-                self.query_one("#server-status", Label).update("Status: Running")
-                self.query_one("#server-status", Label).remove_class("status-stopped")
-                self.query_one("#server-status", Label).add_class("status-running")
-                self.query_one("#btn-start", Button).disabled = True
-                self.query_one("#btn-stop", Button).disabled = False
-                logger.info("SSH server started on port 2222")
+                self.query_one('#server-status', Label).update('Status: Running')
+                self.query_one('#server-status', Label).remove_class('status-stopped')
+                self.query_one('#server-status', Label).add_class('status-running')
+                self.query_one('#btn-start', Button).disabled = True
+                self.query_one('#btn-stop', Button).disabled = False
+                logger.info('SSH server started on port 2222')
                 self._update_server_status()
             else:
-                logger.error("Failed to start SSH server")
-                self.notify("Failed to start SSH server", severity="error")
+                logger.error('Failed to start SSH server')
+                self.notify('Failed to start SSH server', severity='error')
 
     def _stop_ssh_server(self) -> None:
         """Stop the SSH server."""
         if self.ssh_server and self.ssh_server.is_running():
             self.ssh_server.stop()
-            self.query_one("#server-status", Label).update("Status: Stopped")
-            self.query_one("#server-status", Label).remove_class("status-running")
-            self.query_one("#server-status", Label).add_class("status-stopped")
-            self.query_one("#btn-start", Button).disabled = False
-            self.query_one("#btn-stop", Button).disabled = True
-            logger.info("SSH server stopped")
+            self.query_one('#server-status', Label).update('Status: Stopped')
+            self.query_one('#server-status', Label).remove_class('status-running')
+            self.query_one('#server-status', Label).add_class('status-stopped')
+            self.query_one('#btn-start', Button).disabled = False
+            self.query_one('#btn-stop', Button).disabled = True
+            logger.info('SSH server stopped')
 
     def _update_server_status(self) -> None:
         """Update server status display."""
         if self.ssh_server and self.ssh_server.is_running():
             status = self.ssh_server.get_status()
             try:
-                self.query_one("#active-connections", Label).update(
-                    f"Active Connections: {status['active_connections']}"
+                self.query_one('#active-connections', Label).update(
+                    f'Active Connections: {status["active_connections"]}'
                 )
             except Exception:
                 pass
@@ -418,28 +418,28 @@ class DosPCSimApp(App):
 
     def _create_user(self) -> None:
         """Create a new user."""
-        username_input = self.query_one("#input-username", Input)
-        password_input = self.query_one("#input-password", Input)
+        username_input = self.query_one('#input-username', Input)
+        password_input = self.query_one('#input-password', Input)
 
         username = username_input.value.strip()
         password = password_input.value
 
         if not username or not password:
-            self.notify("Username and password are required", severity="error")
+            self.notify('Username and password are required', severity='error')
             return
 
         try:
             self.user_manager.create_user(username, password)
             logger.info(f"User '{username}' created successfully")
             self.notify(f"User '{username}' created successfully")
-            username_input.value = ""
-            password_input.value = ""
+            username_input.value = ''
+            password_input.value = ''
             self._refresh_users_table()
         except ValueError as e:
-            self.notify(str(e), severity="error")
+            self.notify(str(e), severity='error')
         except Exception as e:
-            logger.error(f"Failed to create user: {e}")
-            self.notify(f"Failed to create user: {e}", severity="error")
+            logger.error(f'Failed to create user: {e}')
+            self.notify(f'Failed to create user: {e}', severity='error')
 
     def on_unmount(self) -> None:
         """Cleanup when app closes."""
@@ -455,5 +455,5 @@ def main() -> None:
     app.run()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

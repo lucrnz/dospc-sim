@@ -20,33 +20,33 @@ class TextEditor:
         self.cursor_row = 0
         self.cursor_col = 0
         self.running = False
-        self.status_message = ""
+        self.status_message = ''
         self._alternate_screen = False
 
     def _out(self, text: str) -> None:
         """Output text with proper CRLF line endings for terminal compatibility."""
         # Convert lone \n to \r\n for proper terminal rendering
-        text = text.replace("\r\n", "\n").replace("\n", "\r\n")
+        text = text.replace('\r\n', '\n').replace('\n', '\r\n')
         self.output(text)
 
     def _init_terminal(self) -> None:
         """Initialize terminal for full-screen editing."""
         # Switch to alternate screen buffer
-        self._out("\x1b[?1049h")
+        self._out('\x1b[?1049h')
         self._alternate_screen = True
         # Clear screen and move to home
-        self._out("\x1b[2J\x1b[H")
+        self._out('\x1b[2J\x1b[H')
 
     def _reset_terminal(self) -> None:
         """Reset terminal to normal state."""
         # Show cursor
-        self._out("\x1b[?25h")
+        self._out('\x1b[?25h')
         # Switch back to main screen buffer
         if self._alternate_screen:
-            self._out("\x1b[?1049l")
+            self._out('\x1b[?1049l')
             self._alternate_screen = False
         # Ensure we start on a fresh line
-        self._out("\r\n")
+        self._out('\r\n')
 
     def run(self, filename: str | None = None) -> int:
         """Run the editor, optionally opening a file."""
@@ -59,7 +59,7 @@ class TextEditor:
             if filename:
                 self.open_file(filename)
             else:
-                self.lines = [""]
+                self.lines = ['']
                 self.filename = None
                 self.modified = False
 
@@ -85,28 +85,28 @@ class TextEditor:
         try:
             if self.fs.file_exists(filename):
                 content = self.fs.read_file(filename)
-                self.lines = content.split("\n")
+                self.lines = content.split('\n')
                 # Remove trailing empty line if file ends with newline
-                if self.lines and self.lines[-1] == "":
+                if self.lines and self.lines[-1] == '':
                     self.lines = self.lines[:-1]
                 self.filename = filename
                 self.modified = False
                 self.cursor_row = 0
                 self.cursor_col = 0
-                self.status_message = f"Opened {filename}"
+                self.status_message = f'Opened {filename}'
                 return True
             else:
                 # New file
-                self.lines = [""]
+                self.lines = ['']
                 self.filename = filename
                 self.modified = False
                 self.cursor_row = 0
                 self.cursor_col = 0
-                self.status_message = f"New file: {filename}"
+                self.status_message = f'New file: {filename}'
                 return True
         except Exception as e:
-            self.status_message = f"Error: {e!s}"
-            self.lines = [""]
+            self.status_message = f'Error: {e!s}'
+            self.lines = ['']
             self.filename = filename
             return False
 
@@ -116,22 +116,22 @@ class TextEditor:
             self.filename = filename
 
         if not self.filename:
-            self.status_message = "No filename specified"
+            self.status_message = 'No filename specified'
             return False
 
         try:
-            content = "\n".join(self.lines)
+            content = '\n'.join(self.lines)
             self.fs.write_file(self.filename, content)
             self.modified = False
-            self.status_message = f"Saved {self.filename}"
+            self.status_message = f'Saved {self.filename}'
             return True
         except Exception as e:
-            self.status_message = f"Error saving: {e!s}"
+            self.status_message = f'Error saving: {e!s}'
             return False
 
     def _handle_key(self, key: str) -> None:
         """Handle a single keypress."""
-        if key.startswith("\x1b["):
+        if key.startswith('\x1b['):
             # ANSI escape sequence (arrow keys, etc.)
             self._handle_escape_sequence(key)
             return
@@ -162,45 +162,45 @@ class TextEditor:
             elif code == 0x7F:  # DEL (127) - backspace on some terminals
                 self._backspace()
             elif code == 0x09:  # Tab
-                self._insert_char("    ")
+                self._insert_char('    ')
 
     def _handle_escape_sequence(self, seq: str) -> None:
         """Handle ANSI escape sequences."""
         # Arrow keys
-        if seq == "\x1b[A":  # Up arrow
+        if seq == '\x1b[A':  # Up arrow
             self._move_cursor_up()
-        elif seq == "\x1b[B":  # Down arrow
+        elif seq == '\x1b[B':  # Down arrow
             self._move_cursor_down()
-        elif seq == "\x1b[C":  # Right arrow
+        elif seq == '\x1b[C':  # Right arrow
             self._move_cursor_right()
-        elif seq == "\x1b[D":  # Left arrow
+        elif seq == '\x1b[D':  # Left arrow
             self._move_cursor_left()
         # Home key - multiple variants for different terminals
-        elif seq in ("\x1b[H", "\x1b[1~", "\x1bOH"):
+        elif seq in ('\x1b[H', '\x1b[1~', '\x1bOH'):
             self.cursor_col = 0
             self._draw_screen()
         # End key - multiple variants for different terminals
-        elif seq in ("\x1b[F", "\x1b[4~", "\x1bOF"):
+        elif seq in ('\x1b[F', '\x1b[4~', '\x1bOF'):
             if self.cursor_row < len(self.lines):
                 self.cursor_col = len(self.lines[self.cursor_row])
             self._draw_screen()
         # Insert key
-        elif seq == "\x1b[2~":
+        elif seq == '\x1b[2~':
             pass  # Insert mode not implemented
         # Delete key
-        elif seq == "\x1b[3~":
+        elif seq == '\x1b[3~':
             self._delete_char()
         # Page Up
-        elif seq == "\x1b[5~":
+        elif seq == '\x1b[5~':
             self._page_up()
         # Page Down
-        elif seq == "\x1b[6~":
+        elif seq == '\x1b[6~':
             self._page_down()
 
     def _insert_char(self, char: str) -> None:
         """Insert a character at cursor position."""
         if self.cursor_row >= len(self.lines):
-            self.lines.append("")
+            self.lines.append('')
 
         line = self.lines[self.cursor_row]
         self.lines[self.cursor_row] = (
@@ -213,7 +213,7 @@ class TextEditor:
     def _insert_newline(self) -> None:
         """Insert a new line at cursor position."""
         if self.cursor_row >= len(self.lines):
-            self.lines.append("")
+            self.lines.append('')
         else:
             line = self.lines[self.cursor_row]
             self.lines[self.cursor_row] = line[: self.cursor_col]
@@ -319,7 +319,7 @@ class TextEditor:
         """Quit the editor."""
         if self.modified:
             self.status_message = (
-                "Unsaved changes! Press Ctrl+Q again to quit without saving"
+                'Unsaved changes! Press Ctrl+Q again to quit without saving'
             )
             self._draw_screen()
             # Simple debounce - just quit on next request
@@ -329,7 +329,7 @@ class TextEditor:
 
     def _prompt_open(self) -> None:
         """Prompt for filename to open."""
-        self._draw_prompt("Open file: ")
+        self._draw_prompt('Open file: ')
         filename = self.get_input()
         if filename:
             self.open_file(filename.strip())
@@ -337,7 +337,7 @@ class TextEditor:
 
     def _prompt_save_as(self) -> None:
         """Prompt for filename to save as."""
-        self._draw_prompt("Save as: ")
+        self._draw_prompt('Save as: ')
         filename = self.get_input()
         if filename:
             self.save_file(filename.strip())
@@ -345,7 +345,7 @@ class TextEditor:
 
     def _draw_prompt(self, prompt: str) -> None:
         """Draw a prompt at the bottom of screen."""
-        self._out(f"\x1b[{24};1H\x1b[K{prompt}")
+        self._out(f'\x1b[{24};1H\x1b[K{prompt}')
 
     def _show_help(self) -> None:
         """Show help screen."""
@@ -387,15 +387,15 @@ class TextEditor:
 
         # Clear screen and move to home position
         # This overwrites any local echo artifacts from the PTY
-        screen_lines.append("\x1b[2J\x1b[H")
+        screen_lines.append('\x1b[2J\x1b[H')
 
         # Draw title bar with inverse video
-        title = "DOSPC SIM EDIT"
-        filename_display = self.filename if self.filename else "Untitled"
-        modified_flag = " *" if self.modified else ""
-        title_bar = f" {title} - {filename_display}{modified_flag}"
+        title = 'DOSPC SIM EDIT'
+        filename_display = self.filename if self.filename else 'Untitled'
+        modified_flag = ' *' if self.modified else ''
+        title_bar = f' {title} - {filename_display}{modified_flag}'
         title_bar = title_bar.ljust(79)[:79]
-        screen_lines.append(f"\x1b[7m{title_bar}\x1b[0m")
+        screen_lines.append(f'\x1b[7m{title_bar}\x1b[0m')
 
         # Draw text area (lines 2-22, 21 lines total)
         visible_lines = 21
@@ -406,19 +406,19 @@ class TextEditor:
             if row < len(self.lines):
                 line = self.lines[row]
                 # Show line number and content
-                line_num = f"{row + 1:4d} "
+                line_num = f'{row + 1:4d} '
                 display_line = line[:73]
-                screen_lines.append(f"{line_num}{display_line}")
+                screen_lines.append(f'{line_num}{display_line}')
             else:
-                screen_lines.append("~")
+                screen_lines.append('~')
 
         # Draw status bar with inverse video
-        status = f" {self.status_message}"
+        status = f' {self.status_message}'
         status = status.ljust(79)[:79]
-        screen_lines.append(f"\x1b[7m{status}\x1b[0m")
+        screen_lines.append(f'\x1b[7m{status}\x1b[0m')
 
         # Join all lines and output atomically
-        screen_content = "\n".join(screen_lines)
+        screen_content = '\n'.join(screen_lines)
         self._out(screen_content)
 
         # Position cursor (separate to ensure it's after screen content)
@@ -429,9 +429,9 @@ class TextEditor:
             self.cursor_row - start_row + 3
         )  # +3 for title bar offset (1-indexed)
         cursor_screen_col = self.cursor_col + 6  # +6 for line number prefix (1-indexed)
-        self._out(f"\x1b[{cursor_screen_row};{cursor_screen_col}H")
+        self._out(f'\x1b[{cursor_screen_row};{cursor_screen_col}H')
         # Ensure cursor is visible
-        self._out("\x1b[?25h")
+        self._out('\x1b[?25h')
 
 
 def run_editor(

@@ -3,5 +3,5 @@
 from dospc_sim.cli import run_cli
 from dospc_sim.main import DosPCSimApp, main
 
-__version__ = "0.1.0"
-__all__ = ["DosPCSimApp", "main", "run_cli"]
+__version__ = '0.1.0'
+__all__ = ['DosPCSimApp', 'main', 'run_cli']

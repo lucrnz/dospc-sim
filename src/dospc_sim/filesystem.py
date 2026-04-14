@@ -25,7 +25,7 @@ class UserFilesystem:
         self.home_dir = Path(home_dir).resolve()
         self.username = username
         self.current_dir = self.home_dir
-        self._drive_letter = "C"
+        self._drive_letter = 'C'
         self._ensure_home_exists()
 
     def _ensure_home_exists(self) -> None:
@@ -37,23 +37,23 @@ class UserFilesystem:
         path = path.strip()
 
         # Handle drive letter (e.g., C: or C:\)
-        if len(path) >= 2 and path[1] == ":":
+        if len(path) >= 2 and path[1] == ':':
             if path[0].upper() == self._drive_letter:
                 # Map C: to home directory
-                if len(path) == 2 or path[2:] in ["\\", "/"]:
+                if len(path) == 2 or path[2:] in ['\\', '/']:
                     return self.home_dir
-                path = path[2:].lstrip("\\/")
+                path = path[2:].lstrip('\\/')
             else:
-                raise PermissionError(f"Access denied to drive {path[0].upper()}:")
+                raise PermissionError(f'Access denied to drive {path[0].upper()}:')
 
         # Handle absolute paths from home
-        if path.startswith("\\") or path.startswith("/"):
+        if path.startswith('\\') or path.startswith('/'):
             path = path[1:]
 
         # Resolve the path
-        if not path or path == ".":
+        if not path or path == '.':
             target = self.current_dir
-        elif path == "..":
+        elif path == '..':
             target = self.current_dir.parent
         else:
             target = self.current_dir / path
@@ -64,7 +64,7 @@ class UserFilesystem:
         try:
             target.relative_to(self.home_dir)
         except ValueError as exc:
-            raise PermissionError("Access denied: path outside home directory") from exc
+            raise PermissionError('Access denied: path outside home directory') from exc
 
         return target
 
@@ -72,21 +72,21 @@ class UserFilesystem:
         """Get current path as DOS-style path."""
         try:
             rel_path = self.current_dir.relative_to(self.home_dir)
-            if rel_path == Path("."):
-                return f"{self._drive_letter}:\\"
-            return f"{self._drive_letter}:\\{str(rel_path).replace('/', '\\')}"
+            if rel_path == Path('.'):
+                return f'{self._drive_letter}:\\'
+            return f'{self._drive_letter}:\\{str(rel_path).replace("/", "\\")}'
         except ValueError:
-            return f"{self._drive_letter}:\\"
+            return f'{self._drive_letter}:\\'
 
-    def list_directory(self, path: str = ".") -> list[FileInfo]:
+    def list_directory(self, path: str = '.') -> list[FileInfo]:
         """List files in a directory."""
         target = self._resolve_path(path)
 
         if not target.exists():
-            raise FileNotFoundError(f"Directory not found: {path}")
+            raise FileNotFoundError(f'Directory not found: {path}')
 
         if not target.is_dir():
-            raise NotADirectoryError(f"Not a directory: {path}")
+            raise NotADirectoryError(f'Not a directory: {path}')
 
         entries = []
         for item in target.iterdir():
@@ -94,9 +94,9 @@ class UserFilesystem:
             modified = datetime.fromtimestamp(stat.st_mtime)
 
             # DOS-style attributes
-            attrs = "D" if item.is_dir() else " "
-            attrs += "R" if not os.access(item, os.W_OK) else " "
-            attrs += "H" if item.name.startswith(".") else " "
+            attrs = 'D' if item.is_dir() else ' '
+            attrs += 'R' if not os.access(item, os.W_OK) else ' '
+            attrs += 'H' if item.name.startswith('.') else ' '
 
             entries.append(
                 FileInfo(
@@ -112,17 +112,17 @@ class UserFilesystem:
 
     def change_directory(self, path: str) -> str:
         """Change current directory."""
-        if not path or path.strip() == "":
+        if not path or path.strip() == '':
             self.current_dir = self.home_dir
             return self.get_current_path()
 
         target = self._resolve_path(path)
 
         if not target.exists():
-            raise FileNotFoundError(f"Directory not found: {path}")
+            raise FileNotFoundError(f'Directory not found: {path}')
 
         if not target.is_dir():
-            raise NotADirectoryError(f"Not a directory: {path}")
+            raise NotADirectoryError(f'Not a directory: {path}')
 
         self.current_dir = target
         return self.get_current_path()
@@ -137,14 +137,14 @@ class UserFilesystem:
         target = self._resolve_path(name)
 
         if not target.exists():
-            raise FileNotFoundError(f"Directory not found: {name}")
+            raise FileNotFoundError(f'Directory not found: {name}')
 
         if not target.is_dir():
-            raise NotADirectoryError(f"Not a directory: {name}")
+            raise NotADirectoryError(f'Not a directory: {name}')
 
         # Check if empty
         if any(target.iterdir()):
-            raise OSError(f"Directory not empty: {name}")
+            raise OSError(f'Directory not empty: {name}')
 
         target.rmdir()
 
@@ -153,10 +153,10 @@ class UserFilesystem:
         target = self._resolve_path(name)
 
         if not target.exists():
-            raise FileNotFoundError(f"Directory not found: {name}")
+            raise FileNotFoundError(f'Directory not found: {name}')
 
         if not target.is_dir():
-            raise NotADirectoryError(f"Not a directory: {name}")
+            raise NotADirectoryError(f'Not a directory: {name}')
 
         shutil.rmtree(target)
 
@@ -180,12 +180,12 @@ class UserFilesystem:
         target = self._find_case_insensitive(target)
 
         if not target.exists():
-            raise FileNotFoundError(f"File not found: {filename}")
+            raise FileNotFoundError(f'File not found: {filename}')
 
         if target.is_dir():
-            raise IsADirectoryError(f"Is a directory: {filename}")
+            raise IsADirectoryError(f'Is a directory: {filename}')
 
-        with open(target, encoding="utf-8", errors="replace") as f:
+        with open(target, encoding='utf-8', errors='replace') as f:
             return f.read()
 
     def write_file(self, filename: str, content: str) -> None:
@@ -193,7 +193,7 @@ class UserFilesystem:
         target = self._resolve_path(filename)
         target.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(target, "w", encoding="utf-8") as f:
+        with open(target, 'w', encoding='utf-8') as f:
             f.write(content)
 
     def delete_file(self, filename: str) -> None:
@@ -201,10 +201,10 @@ class UserFilesystem:
         target = self._resolve_path(filename)
 
         if not target.exists():
-            raise FileNotFoundError(f"File not found: {filename}")
+            raise FileNotFoundError(f'File not found: {filename}')
 
         if target.is_dir():
-            raise IsADirectoryError(f"Is a directory: {filename}")
+            raise IsADirectoryError(f'Is a directory: {filename}')
 
         target.unlink()
 
@@ -214,10 +214,10 @@ class UserFilesystem:
         dest_path = self._resolve_path(dest)
 
         if not source_path.exists():
-            raise FileNotFoundError(f"Source not found: {source}")
+            raise FileNotFoundError(f'Source not found: {source}')
 
         if source_path.is_dir():
-            raise IsADirectoryError(f"Source is a directory: {source}")
+            raise IsADirectoryError(f'Source is a directory: {source}')
 
         # If dest is an existing directory, copy into it
         if dest_path.exists() and dest_path.is_dir():
@@ -232,7 +232,7 @@ class UserFilesystem:
         dest_path = self._resolve_path(dest)
 
         if not source_path.exists():
-            raise FileNotFoundError(f"Source not found: {source}")
+            raise FileNotFoundError(f'Source not found: {source}')
 
         # If dest is an existing directory, move into it
         if dest_path.exists() and dest_path.is_dir():
@@ -247,10 +247,10 @@ class UserFilesystem:
         new_path = self._resolve_path(new_name)
 
         if not old_path.exists():
-            raise FileNotFoundError(f"Source not found: {old_name}")
+            raise FileNotFoundError(f'Source not found: {old_name}')
 
         if new_path.exists():
-            raise FileExistsError(f"Destination already exists: {new_name}")
+            raise FileExistsError(f'Destination already exists: {new_name}')
 
         old_path.rename(new_path)
 
@@ -290,7 +290,7 @@ class UserFilesystem:
         except (PermissionError, FileNotFoundError):
             return False
 
-    def walk_directory(self, path: str = "."):
+    def walk_directory(self, path: str = '.'):
         """Recursively walk a directory tree.
 
         Yields (dir_path, dirs, files) tuples.
@@ -298,10 +298,10 @@ class UserFilesystem:
         target = self._resolve_path(path)
 
         if not target.exists():
-            raise FileNotFoundError(f"Directory not found: {path}")
+            raise FileNotFoundError(f'Directory not found: {path}')
 
         if not target.is_dir():
-            raise NotADirectoryError(f"Not a directory: {path}")
+            raise NotADirectoryError(f'Not a directory: {path}')
 
         for dirpath, dirnames, filenames in os.walk(target):
             rel = Path(dirpath).relative_to(self.home_dir)
@@ -317,13 +317,13 @@ class UserFilesystem:
         target = self._find_case_insensitive(target)
 
         if not target.exists():
-            raise FileNotFoundError(f"File not found: {filename}")
+            raise FileNotFoundError(f'File not found: {filename}')
 
         stat = target.stat()
         modified = datetime.fromtimestamp(stat.st_mtime)
-        attrs = "D" if target.is_dir() else " "
-        attrs += "R" if not os.access(target, os.W_OK) else " "
-        attrs += "H" if target.name.startswith(".") else " "
+        attrs = 'D' if target.is_dir() else ' '
+        attrs += 'R' if not os.access(target, os.W_OK) else ' '
+        attrs += 'H' if target.name.startswith('.') else ' '
 
         return FileInfo(
             name=target.name,
