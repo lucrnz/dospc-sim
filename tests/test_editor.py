@@ -358,12 +358,48 @@ class TestEscapeSequences:
 
         assert editor.cursor_col == 0
 
+    def test_home_key_vt_style(self, editor):
+        """Test home key VT-style escape sequence (VSCode terminal)."""
+        editor.lines = ["test"]
+        editor.cursor_col = 3
+
+        editor._handle_escape_sequence("\x1b[1~")
+
+        assert editor.cursor_col == 0
+
+    def test_home_key_application(self, editor):
+        """Test home key application mode escape sequence (VSCode terminal)."""
+        editor.lines = ["test"]
+        editor.cursor_col = 3
+
+        editor._handle_escape_sequence("\x1bOH")
+
+        assert editor.cursor_col == 0
+
     def test_end_key(self, editor):
         """Test end key escape sequence."""
         editor.lines = ["test"]
         editor.cursor_col = 0
 
         editor._handle_escape_sequence("\x1b[F")
+
+        assert editor.cursor_col == 4
+
+    def test_end_key_vt_style(self, editor):
+        """Test end key VT-style escape sequence (VSCode terminal)."""
+        editor.lines = ["test"]
+        editor.cursor_col = 0
+
+        editor._handle_escape_sequence("\x1b[4~")
+
+        assert editor.cursor_col == 4
+
+    def test_end_key_application(self, editor):
+        """Test end key application mode escape sequence (VSCode terminal)."""
+        editor.lines = ["test"]
+        editor.cursor_col = 0
+
+        editor._handle_escape_sequence("\x1bOF")
 
         assert editor.cursor_col == 4
 
@@ -393,3 +429,96 @@ class TestEscapeSequences:
         editor._handle_escape_sequence("\x1b[6~")
 
         assert editor.cursor_row == 25
+
+
+class TestKeyBindings:
+    """Tests for Ctrl key bindings."""
+
+    @pytest.fixture
+    def temp_dir(self):
+        """Create a temporary directory for testing."""
+        temp_path = tempfile.mkdtemp()
+        yield temp_path
+        shutil.rmtree(temp_path)
+
+    @pytest.fixture
+    def editor(self, temp_dir):
+        """Create an editor instance."""
+        filesystem = UserFilesystem(temp_dir, "testuser")
+        mock_output = Mock()
+
+        def mock_input():
+            return "\x03"  # Ctrl+C
+
+        return TextEditor(filesystem, mock_output, mock_input)
+
+    def test_ctrl_q_quits(self, editor):
+        """Test Ctrl+Q quits the editor."""
+        editor.running = True
+        editor._handle_key("\x11")  # Ctrl+Q
+        assert editor.running is False
+
+    def test_ctrl_c_quits(self, editor):
+        """Test Ctrl+C quits the editor."""
+        editor.running = True
+        editor._handle_key("\x03")  # Ctrl+C
+        assert editor.running is False
+
+    def test_ctrl_s_saves(self, editor):
+        """Test Ctrl+S saves the file."""
+        editor.open_file("test.txt")
+        editor.lines = ["test content"]
+        editor.modified = True
+
+        editor._handle_key("\x13")  # Ctrl+S
+
+        assert editor.modified is False
+        assert "Saved" in editor.status_message
+
+    def test_backspace_code_8(self, editor):
+        """Test backspace with code 8."""
+        editor.lines = ["hello"]
+        editor.cursor_col = 5
+
+        editor._handle_key("\x08")  # Backspace
+
+        assert editor.lines == ["hell"]
+        assert editor.cursor_col == 4
+
+    def test_backspace_code_127(self, editor):
+        """Test backspace with code 127 (DEL)."""
+        editor.lines = ["hello"]
+        editor.cursor_col = 5
+
+        editor._handle_key("\x7f")  # DEL (127)
+
+        assert editor.lines == ["hell"]
+        assert editor.cursor_col == 4
+
+    def test_tab_inserts_spaces(self, editor):
+        """Test Tab inserts 4 spaces."""
+        editor.lines = [""]
+        editor.cursor_col = 0
+
+        editor._handle_key("\t")  # Tab
+
+        assert editor.lines == ["    "]
+        assert editor.cursor_col == 4
+
+    def test_enter_creates_newline(self, editor):
+        """Test Enter creates a new line."""
+        editor.lines = ["hello world"]
+        editor.cursor_col = 5
+
+        editor._handle_key("\r")  # Enter
+
+        assert editor.lines == ["hello", " world"]
+        assert editor.cursor_row == 1
+        assert editor.cursor_col == 0
+
+    def test_escape_shows_help(self, editor):
+        """Test Escape shows help."""
+        # This is hard to test directly since it calls get_input()
+        # Just verify the handler doesn't crash
+        editor._handle_key("\x1b")  # Escape - will wait for input
+        # The test passes if no exception is raised
