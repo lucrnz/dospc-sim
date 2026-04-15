@@ -18,10 +18,11 @@ This document details the DOS command compatibility status for the SSH DOS Envir
 | `MOVE` | ✅ Fully Implemented | Move files | Moves files between directories |
 | `TYPE` | ✅ Fully Implemented | Display file contents | Text file display with UTF-8 support |
 | `TREE` | ✅ Fully Implemented | Display directory structure | Supports `/F` (show files) switch |
-| `FIND` | ✅ Fully Implemented | Search for text in a file | Supports `/V` (invert), `/C` (count), `/I` (case-insensitive), `/N` (line numbers) |
-| `MORE` | ✅ Fully Implemented | Display output one page at a time | Paginated file display |
-| `SORT` | ✅ Fully Implemented | Sort lines alphabetically | Supports `/R` (reverse) and `/O file` (output to file) |
+| `FIND` | ✅ Fully Implemented | Search for text in a file | Supports `/V` (invert), `/C` (count), `/I` (case-insensitive), `/N` (line numbers), and piped input |
+| `MORE` | ✅ Fully Implemented | Display output one page at a time | Paginated file display; supports piped input |
+| `SORT` | ✅ Fully Implemented | Sort lines alphabetically | Supports `/R` (reverse), `/O file` (output to file), and piped input |
 | `FC` | ✅ Fully Implemented | Compare two files | Supports `/N` (line numbers) switch |
+| `EDIT` | ✅ Fully Implemented | Full-screen text editor | Supports cursor navigation, file open/save, Ctrl key shortcuts |
 
 ### System and Environment Commands
 
@@ -33,26 +34,40 @@ This document details the DOS command compatibility status for the SSH DOS Envir
 | `EXIT` | ✅ Fully Implemented | Exit shell | Closes SSH session |
 | `VER` | ✅ Fully Implemented | Display version | Shows "DosPC Sim DOS [Version 1.0]" |
 | `SET` | ✅ Fully Implemented | Environment variables | Display/set environment variables |
-| `PROMPT` | ✅ Fully Implemented | Change prompt | Modify command prompt string |
+| `PROMPT` | ✅ Fully Implemented | Change prompt | Supports `$P`, `$G`, `$L`, `$D`, `$T`, `$N`, `$$` meta-characters |
 | `PATH` | ✅ Fully Implemented | Display/set path | View or modify search path |
-| `DATE` | ✅ Partially Implemented | Display date | Shows current date (setting not implemented) |
-| `TIME` | ✅ Partially Implemented | Display time | Shows current time (setting not implemented) |
+| `DATE` | ⚠️ Partially Implemented | Display date | Shows current date (setting not implemented) |
+| `TIME` | ⚠️ Partially Implemented | Display time | Shows current time (setting not implemented) |
+
+### I/O Redirection and Pipes
+
+| Feature | Status | Description | Notes |
+|---------|--------|-------------|-------|
+| Pipes (`\|`) | ✅ Fully Implemented | Pipe output between commands | Multi-stage pipes supported |
+| Output Redirect (`>`) | ✅ Fully Implemented | Redirect output to file | Overwrites target file |
+| Append Redirect (`>>`) | ✅ Fully Implemented | Append output to file | Appends to existing content |
+| Input Redirect (`<`) | ✅ Fully Implemented | Redirect input from file | Reads file as stdin |
 
 ### Batch File Support
 
-| Feature | Status | Description |
-|---------|--------|-------------|
-| `.BAT` Execution | ✅ Fully Implemented | Execute batch files |
-| `.CMD` Execution | ✅ Fully Implemented | Execute command scripts |
-| `%0-%9` Parameters | ✅ Fully Implemented | Command line parameter substitution |
-| `REM` Comments | ✅ Fully Implemented | Remark/comment lines |
-| `::` Comments | ✅ Fully Implemented | Alternative comment style |
-| `ECHO OFF` | ⚠️ Stub | Command echo suppression (stub) |
-| `PAUSE` | ❌ Not Implemented | Pause execution |
-| `IF` | ❌ Not Implemented | Conditional execution |
-| `FOR` | ❌ Not Implemented | Loop construct |
-| `GOTO` | ❌ Not Implemented | Jump to label |
-| `CALL` | ❌ Not Implemented | Call another batch file |
+| Feature | Status | Description | Notes |
+|---------|--------|-------------|-------|
+| `.BAT` Execution | ✅ Fully Implemented | Execute batch files | |
+| `.CMD` Execution | ✅ Fully Implemented | Execute command scripts | |
+| `%0-%9` Parameters | ✅ Fully Implemented | Command line parameter substitution | |
+| `%VAR%` Expansion | ✅ Fully Implemented | Environment variable expansion | Expanded at execution time |
+| `REM` Comments | ✅ Fully Implemented | Remark/comment lines | |
+| `::` Comments | ✅ Fully Implemented | Alternative comment style | |
+| Labels (`:LABEL`) | ✅ Fully Implemented | Label lines for GOTO targets | |
+| `GOTO` | ✅ Fully Implemented | Jump to label | Supports forward and backward jumps |
+| `CALL` | ✅ Fully Implemented | Call another batch file | Supports passing arguments |
+| `IF` | ✅ Fully Implemented | Conditional execution | Supports `EXIST`, `ERRORLEVEL`, string comparison (`==`), and `NOT` |
+| `FOR` | ✅ Fully Implemented | Loop construct | Supports `%%var IN (set) DO command` |
+| `PAUSE` | ✅ Fully Implemented | Pause execution | Displays "Press any key to continue . . . " |
+| `ECHO OFF` | ⚠️ Partially Implemented | Command echo suppression | Toggle works; batch commands are not echoed regardless of state |
+| `@` Prefix | ❌ Not Implemented | Suppress echo for single line | |
+| `IF DEFINED` | ❌ Not Implemented | Check if variable is defined | |
+| `IF` / `ELSE` | ❌ Not Implemented | Else clause for conditionals | |
 
 ## Command Details
 
@@ -106,6 +121,46 @@ This document details the DOS command compatibility status for the SSH DOS Envir
 - Supports `..` (parent directory)
 - Supports absolute paths from C:\
 
+### EDIT Command
+
+**Syntax:** `EDIT [filename]`
+
+**Features:**
+- Full-screen text editor using alternate screen buffer
+- Arrow keys, Home/End, PgUp/PgDn navigation
+- Ctrl+S to save, Ctrl+Q to quit, Ctrl+O to open, Ctrl+A to save as
+- Line numbers displayed in editor
+- Unsaved changes warning on quit
+
+### PROMPT Command
+
+**Syntax:** `PROMPT [string]`
+
+**Meta-characters:**
+- `$P` - Current path
+- `$G` - `>` character
+- `$L` - `<` character
+- `$D` - Current date
+- `$T` - Current time
+- `$N` - Drive letter
+- `$$` - Literal `$`
+
+### IF Command (Batch)
+
+**Syntax:**
+- `IF [NOT] EXIST filename command`
+- `IF [NOT] ERRORLEVEL number command`
+- `IF [NOT] string1==string2 command`
+
+### FOR Command (Batch)
+
+**Syntax:** `FOR %%var IN (set) DO command`
+
+**Example:**
+```
+FOR %%F IN (file1.txt file2.txt file3.txt) DO TYPE %%F
+```
+
 ## Security Features
 
 ### User Isolation
@@ -113,6 +168,7 @@ This document details the DOS command compatibility status for the SSH DOS Envir
 1. **Home Directory Restriction**: Users cannot access files outside their home directory
 2. **Path Validation**: All paths are resolved and validated against home directory
 3. **Permission Errors**: Attempts to escape home directory result in "Access denied" errors
+4. **Case-Insensitive File Access**: File lookups use case-insensitive matching for DOS compatibility
 
 ### C: Drive Mapping
 
@@ -127,7 +183,7 @@ The following environment variables are available:
 
 | Variable | Default Value | Description |
 |----------|---------------|-------------|
-| `PROMPT` | `C:\>` | Command prompt string |
+| `PROMPT` | `$P$G` | Command prompt string (evaluates to `C:\>` at root) |
 | `PATH` | `C:\;C:\DOS;C:\WINDOWS` | Search path for executables |
 | `COMSPEC` | `C:\COMMAND.COM` | Command interpreter path |
 | `TEMP` | `C:\TEMP` | Temporary directory |
@@ -137,23 +193,24 @@ The following environment variables are available:
 
 ### Not Implemented
 
-1. **Pipes (`|`)**: Command piping is not supported
-2. **Redirection (`>`, `<`, `>>`)**: I/O redirection is not supported
-3. **Command chaining (`&&`, `||`)**: Multiple command execution is not supported
-4. **Background execution (`&`)**: Not applicable in this environment
+1. **Command chaining (`&&`, `||`)**: Multiple command execution is not supported
+2. **Background execution (`&`)**: Not applicable in this environment
+3. **`@` prefix**: Suppressing echo for a single batch line is not supported
+4. **`IF DEFINED`**: Checking if a variable is defined is not supported
+5. **`IF` / `ELSE`**: Else clause for conditionals is not supported
 
 ### Partial Implementations
 
-1. **Batch Files**: Basic execution works, but advanced features (loops, conditionals) are not implemented
+1. **Batch ECHO**: `ECHO ON/OFF` toggle works, but batch commands are never echoed during execution regardless of ECHO state
 2. **Wildcards**: Only DEL supports wildcards; COPY and DIR have limited support
 
 ## Future Enhancements
 
 Planned features for future releases:
 
-- [ ] Full batch file control structures (IF, FOR, GOTO)
-- [ ] I/O redirection support
+- [ ] Batch `@` prefix for single-line echo suppression
+- [ ] `IF DEFINED` and `IF` / `ELSE` support
 - [ ] Command history and line editing
 - [ ] Tab completion for filenames
-- [ ] Additional commands: ATTRIB, XCOPY
+- [ ] Additional commands: ATTRIB, XCOPY, DOSKEY
 - [ ] Network drive simulation (NET USE)
