@@ -192,7 +192,6 @@ name = "dospc-sim"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "bcrypt" },
     { name = "lark" },
     { name = "paramiko" },
     { name = "pytest" },
@@ -207,7 +206,6 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "bcrypt", specifier = ">=5.0.0" },
     { name = "lark", specifier = ">=1.2.2" },
     { name = "paramiko", specifier = ">=4.0.0" },
     { name = "pytest", specifier = ">=9.0.2" },
