@@ -2,47 +2,76 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 
-from lark import Lark, Transformer, v_args
+from lark import Lark, Token, Transformer, v_args
 
 # ---------------------------------------------------------------------------
 # Grammar - handles regular commands, pipes, and redirections
 # ---------------------------------------------------------------------------
 
 _DOS_GRAMMAR = r"""
-start: command_line*
+start: command_line
 
-command_line: command_chain redirect*
-            | command redirect*
+command_line: command redirect*
 
-command_chain: command (PIPE command)*
+?command: comment
+        | if_command
+        | for_command
+        | echo_command
+        | goto_command
+        | call_command
+        | pause_command
+        | label
+        | command_chain
+        | simple_command
 
-command: simple_command
+command_chain: simple_command ("|" simple_command)+
 
 simple_command: command_name argument*
-              | command_name
 
-redirect: ">" WORD                            -> write_redirect
-        | ">>" WORD                           -> append_redirect
-        | "<" WORD                            -> stdin_redirect
+echo_command: "ECHO"i echo_argument*
+goto_command: "GOTO"i WORD
+call_command: "CALL"i simple_command
+pause_command: "PAUSE"i
+if_command: "IF"i not_modifier? if_condition command_line
+for_command: "FOR"i FOR_VAR "IN"i "(" for_items ")" "DO"i command_line
+label: ":" LABEL_NAME
+comment: COMMENT
+
+if_condition: "EXIST"i WORD        -> if_exist_condition
+            | "ERRORLEVEL"i NUMBER -> if_errorlevel_condition
+            | COMPARE_EXPR          -> if_compare_condition
+
+for_items: WORD+
+
+redirect: ">" WORD                  -> write_redirect
+        | ">>" WORD                 -> append_redirect
+        | "<" WORD                  -> stdin_redirect
+
+echo_argument: switch
+             | WORD
 
 argument: switch
         | WORD
+
+not_modifier: "NOT"i
 
 switch: "/" SWITCH_CHARS
 
 command_name: WORD
 
-PIPE: "|"
-
+FOR_VAR.2: /%%[A-Za-z]/
+LABEL_NAME: /[A-Za-z_][A-Za-z0-9_]*/
+COMMENT: /::[^\r\n]*/ | /(?i:REM)(?=$|\s).*/
 SWITCH_CHARS: /[A-Za-z0-9]+/
+NUMBER: /\d+/
+COMPARE_EXPR: /[^\s|<>]+(?:\s*==\s*[^\s|<>]+)+/
 
-WORD: /[^ \t\r\n|<>\/"']+/ | /"[^"]*"/ | /'[^']*'/
+WORD: /[^ \t\r\n|<>\/()"']+/ | /"[^"]*"/ | /'[^']*'/
 
-%import common.WS
-%ignore WS+
+%import common.WS_INLINE
+%ignore WS_INLINE
 """
 
 
@@ -196,246 +225,152 @@ def _strip_quotes(val_str: str) -> str:
     return val_str
 
 
+def _argument_value(value: Argument | Switch | str) -> str:
+    if isinstance(value, (Argument, Switch)):
+        return value.value
+    return value
+
+
+def _split_compare_expr(expr: str) -> tuple[str, str]:
+    left, right = expr.split('==', 1)
+    return _strip_quotes(left.strip()), _strip_quotes(right.strip())
+
+
 class _DOSTransformer(Transformer):
     @v_args(inline=True)
-    def start(self, *lines):
-        items = [item for item in lines if item is not None]
-        return BatchProgram(lines=items)
+    def start(self, line):
+        if line is None:
+            return BatchProgram(lines=[])
+        return BatchProgram(lines=[line])
 
     def command_line(self, children):
-        return children[0] if children else None
+        if not children:
+            return None
 
-    @v_args(inline=True)
-    def command_chain(self, cmd, *rest):
-        commands = [cmd]
-        for p in rest:
-            if isinstance(p, SimpleCommand):
-                commands.append(p)
-        if len(commands) > 1:
-            return CommandLine(command=PipeCommand(commands=commands))
-        return CommandLine(command=cmd)
+        command = children[0]
+        if command is None:
+            return None
 
-    @v_args(inline=True)
-    def command(self, cmd):
-        return cmd
+        parsed = (
+            command
+            if isinstance(command, CommandLine)
+            else CommandLine(command=command)
+        )
+        for redirect in children[1:]:
+            if redirect['type'] == 'stdin':
+                parsed.stdin_redirect = redirect['target']
+            elif redirect['type'] == 'stdout':
+                parsed.stdout_redirect = redirect['target']
+            elif redirect['type'] == 'append':
+                parsed.append_redirect = redirect['target']
+        return parsed
 
-    @v_args(inline=True)
-    def simple_command(self, *parts):
-        name = None
-        args: list[Argument | Switch] = []
-        for p in parts:
-            if isinstance(p, CommandName):
-                name = p
-            else:
-                args.append(p)
-        return SimpleCommand(name=name, args=args)
+    def comment(self, _children):
+        return None
+
+    def command_chain(self, children):
+        commands = [child for child in children if not isinstance(child, Token)]
+        return PipeCommand(commands=commands)
+
+    def simple_command(self, children):
+        return SimpleCommand(name=children[0], args=children[1:])
 
     @v_args(inline=True)
     def command_name(self, word):
         return CommandName(name=str(word).upper())
 
     @v_args(inline=True)
+    def echo_command(self, *parts):
+        values = [_argument_value(part) for part in parts]
+        if not values:
+            return EchoCommand(text=None, on=None)
+        if len(values) == 1 and values[0].upper() == 'ON':
+            return EchoCommand(text=None, on=True)
+        if len(values) == 1 and values[0].upper() == 'OFF':
+            return EchoCommand(text=None, on=False)
+        return EchoCommand(text=' '.join(values))
+
+    @v_args(inline=True)
+    def goto_command(self, label):
+        return GotoCommand(label=str(label).upper())
+
+    @v_args(inline=True)
+    def call_command(self, target):
+        return CallCommand(target=target)
+
+    def pause_command(self, _children):
+        return PauseCommand()
+
+    @v_args(inline=True)
+    def if_command(self, *parts):
+        if len(parts) == 3:
+            negated = True
+            condition, command = parts[1], parts[2]
+        else:
+            negated = False
+            condition, command = parts
+        return IfCommand(negated=negated, condition=condition, command=command)
+
+    @v_args(inline=True)
+    def for_command(self, var, items, command):
+        return ForCommand(var=str(var)[2:].upper(), items=items, command=command)
+
+    @v_args(inline=True)
+    def label(self, name):
+        return Label(name=str(name).upper())
+
+    def for_items(self, children):
+        return [str(item) for item in children]
+
+    @v_args(inline=True)
     def argument(self, val):
-        if isinstance(val, (Switch, Argument)):
+        if isinstance(val, Switch):
             return val
-        return Argument(value=_strip_quotes(str(val)))
+        return Argument(value=str(val))
+
+    @v_args(inline=True)
+    def echo_argument(self, val):
+        if isinstance(val, Switch):
+            return val
+        return str(val)
+
+    def not_modifier(self, _children):
+        return True
 
     @v_args(inline=True)
     def switch(self, chars):
         return Switch(name=str(chars).upper())
 
     @v_args(inline=True)
+    def if_exist_condition(self, filename):
+        return IfExistCondition(filename=str(filename))
+
+    @v_args(inline=True)
+    def if_errorlevel_condition(self, level):
+        return IfErrorlevelCondition(level=int(level))
+
+    @v_args(inline=True)
+    def if_compare_condition(self, expr):
+        left, right = _split_compare_expr(str(expr))
+        return IfCompareCondition(left=left, right=right)
+
+    @v_args(inline=True)
     def write_redirect(self, target):
-        return {'type': 'stdout', 'target': _strip_quotes(str(target))}
+        return {'type': 'stdout', 'target': str(target)}
 
     @v_args(inline=True)
     def append_redirect(self, target):
-        return {'type': 'append', 'target': _strip_quotes(str(target))}
+        return {'type': 'append', 'target': str(target)}
 
     @v_args(inline=True)
     def stdin_redirect(self, target):
-        return {'type': 'stdin', 'target': _strip_quotes(str(target))}
+        return {'type': 'stdin', 'target': str(target)}
 
-    def PIPE(self, token):
-        return token
+    def WORD(self, token):
+        return _strip_quotes(str(token))
 
-
-# ---------------------------------------------------------------------------
-# Redirect extraction (pre-parser)
-# ---------------------------------------------------------------------------
-
-_APPEND_RE = re.compile(r""">>\s*(\S+)""")
-_WRITE_RE = re.compile(r"""(?<!>)>(?!>)\s*(\S+)""")
-_INPUT_RE = re.compile(r"""<\s*(\S+)""")
-
-
-def _parse_redirects(line: str):
-    """Extract I/O redirections from a command line.
-
-    Returns (cleaned_line, stdin_redirect, stdout_redirect, append_redirect).
-    """
-    stdin_redirect = None
-    stdout_redirect = None
-    append_redirect = None
-
-    remaining = line
-
-    m = _APPEND_RE.search(remaining)
-    if m:
-        append_redirect = _strip_quotes(m.group(1))
-        remaining = remaining[: m.start()].rstrip() + remaining[m.end() :]
-
-    m = _WRITE_RE.search(remaining)
-    if m:
-        stdout_redirect = _strip_quotes(m.group(1))
-        remaining = remaining[: m.start()].rstrip() + remaining[m.end() :]
-
-    m = _INPUT_RE.search(remaining)
-    if m:
-        stdin_redirect = _strip_quotes(m.group(1))
-        remaining = remaining[: m.start()].rstrip() + remaining[m.end() :]
-
-    return remaining.strip(), stdin_redirect, stdout_redirect, append_redirect
-
-
-# ---------------------------------------------------------------------------
-# Echo handling (pre-parser)
-# ---------------------------------------------------------------------------
-
-_ECHO_RE = re.compile(r'^ECHO\s*(.*)', re.IGNORECASE)
-
-
-def _parse_echo(line: str) -> EchoCommand | None:
-    m = _ECHO_RE.match(line)
-    if not m:
-        return None
-    rest = m.group(1).strip()
-    if not rest:
-        return EchoCommand(text=None, on=None)
-    if rest.upper() == 'ON':
-        return EchoCommand(text=None, on=True)
-    if rest.upper() == 'OFF':
-        return EchoCommand(text=None, on=False)
-    if (rest.startswith('"') and rest.endswith('"')) or (
-        rest.startswith("'") and rest.endswith("'")
-    ):
-        rest = rest[1:-1]
-    return EchoCommand(text=rest)
-
-
-# ---------------------------------------------------------------------------
-# Batch control flow parsing (pre-parser, produces AST nodes)
-# ---------------------------------------------------------------------------
-
-_GOTO_RE = re.compile(r'^GOTO\s+(\S+)$', re.IGNORECASE)
-_CALL_RE = re.compile(r'^CALL\s+(.+)$', re.IGNORECASE)
-_PAUSE_RE = re.compile(r'^PAUSE\s*$', re.IGNORECASE)
-
-_IF_RE = re.compile(
-    r'^IF\s+(NOT\s+)?(EXIST\s+(\S+)|ERRORLEVEL\s+(\d+)|(\S+)\s*==\s*(\S+))\s+(.+)$',
-    re.IGNORECASE,
-)
-
-_FOR_RE = re.compile(
-    r'^FOR\s+%%([A-Za-z])\s+IN\s*\(([^)]+)\)\s+DO\s+(.+)$',
-    re.IGNORECASE,
-)
-
-
-def _parse_goto(line: str) -> CommandLine | None:
-    m = _GOTO_RE.match(line)
-    if m:
-        return CommandLine(command=GotoCommand(label=m.group(1).strip().upper()))
-    return None
-
-
-def _parse_call(line: str) -> CommandLine | None:
-    m = _CALL_RE.match(line)
-    if not m:
-        return None
-    rest = m.group(1).strip()
-    parsed = _parse_simple(rest)
-    if parsed:
-        return CommandLine(command=CallCommand(target=parsed))
-    return None
-
-
-def _parse_pause(line: str) -> CommandLine | None:
-    if _PAUSE_RE.match(line):
-        return CommandLine(command=PauseCommand())
-    return None
-
-
-def _parse_if(line: str) -> CommandLine | None:
-    m = _IF_RE.match(line)
-    if not m:
-        return None
-
-    negated = m.group(1) is not None
-    rest_cmd = m.group(7).strip()
-
-    condition = None
-    if m.group(3):
-        condition = IfExistCondition(filename=_strip_quotes(m.group(3)))
-    elif m.group(4):
-        condition = IfErrorlevelCondition(level=int(m.group(4)))
-    elif m.group(5) and m.group(6):
-        condition = IfCompareCondition(
-            left=_strip_quotes(m.group(5)),
-            right=_strip_quotes(m.group(6)),
-        )
-
-    if condition is None:
-        return None
-
-    cmd_cl = parse_command(rest_cmd)
-    if cmd_cl is None:
-        cmd_cl = CommandLine(
-            command=SimpleCommand(name=CommandName(name=rest_cmd.upper()), args=[])
-        )
-
-    return CommandLine(
-        command=IfCommand(negated=negated, condition=condition, command=cmd_cl),
-    )
-
-
-def _parse_for(line: str) -> CommandLine | None:
-    m = _FOR_RE.match(line)
-    if not m:
-        return None
-
-    var = m.group(1).upper()
-    items = m.group(2).split()
-    cmd_text = m.group(3).strip()
-
-    cmd_cl = parse_command(cmd_text)
-    if cmd_cl is None:
-        cmd_cl = CommandLine(
-            command=SimpleCommand(name=CommandName(name=cmd_text.upper()), args=[])
-        )
-
-    return CommandLine(
-        command=ForCommand(var=var, items=items, command=cmd_cl),
-    )
-
-
-def _parse_simple(line: str) -> SimpleCommand | None:
-    """Parse a simple 'CMD arg1 arg2' string into a SimpleCommand."""
-    parts = line.split()
-    if not parts:
-        return None
-    name = CommandName(name=parts[0].upper())
-    args: list[Argument | Switch] = []
-    for p in parts[1:]:
-        if p.startswith('/'):
-            args.append(Switch(name=p[1:].upper()))
-        else:
-            args.append(Argument(value=_strip_quotes(p)))
-    return SimpleCommand(name=name, args=args)
-
-
-def _first_word_upper(line: str) -> str:
-    return line.upper().split()[0] if line.split() else ''
+    def NUMBER(self, token):
+        return int(str(token))
 
 
 # ---------------------------------------------------------------------------
@@ -453,8 +388,8 @@ _transformer = _DOSTransformer()
 
 
 def _parse_via_lark(line: str) -> CommandLine | None:
-    """Parse using the Lark grammar (regular commands + pipes + redirects)."""
-    tree = _parser.parse(line + '\n')
+    """Parse using the Lark grammar."""
+    tree = _parser.parse(line)
     result = _transformer.transform(tree)
     if isinstance(result, BatchProgram) and result.lines:
         cl = result.lines[0]
@@ -472,91 +407,15 @@ def parse_command(line: str) -> CommandLine | None:
     if not line or not line.strip():
         return None
 
-    line = line.strip()
-
-    if line.startswith('::') or line.upper().startswith('REM '):
-        return None
-
-    # Extract redirects before any parsing
-    line, stdin_redirect, stdout_redirect, append_redirect = _parse_redirects(line)
-    if not line:
-        return None
-
-    # Labels
-    if line.startswith(':'):
-        label_match = re.match(r'^:([A-Za-z_][A-Za-z0-9_]*)\s*$', line)
-        if label_match:
-            return CommandLine(
-                command=Label(name=label_match.group(1).upper()),
-                stdin_redirect=stdin_redirect,
-                stdout_redirect=stdout_redirect,
-                append_redirect=append_redirect,
-            )
-        return None
-
-    first = _first_word_upper(line)
-
-    # ECHO (takes rest of line as literal text)
-    if first == 'ECHO':
-        echo = _parse_echo(line)
-        if echo is not None:
-            return CommandLine(
-                command=echo,
-                stdin_redirect=stdin_redirect,
-                stdout_redirect=stdout_redirect,
-                append_redirect=append_redirect,
-            )
-
-    # Batch control flow - parsed into AST nodes
-    if first == 'GOTO':
-        result = _parse_goto(line)
-        if result:
-            return result
-
-    if first == 'CALL':
-        result = _parse_call(line)
-        if result:
-            return result
-
-    if first == 'PAUSE':
-        result = _parse_pause(line)
-        if result:
-            return result
-
-    if first == 'IF':
-        result = _parse_if(line)
-        if result:
-            return result
-
-    if first == 'FOR':
-        result = _parse_for(line)
-        if result:
-            return result
-
-    # Regular commands + pipes via Lark grammar
     try:
-        cl = _parse_via_lark(line)
-        if cl is not None:
-            if stdin_redirect:
-                cl.stdin_redirect = stdin_redirect
-            if stdout_redirect:
-                cl.stdout_redirect = stdout_redirect
-            if append_redirect:
-                cl.append_redirect = append_redirect
-            return cl
+        return _parse_via_lark(line.strip())
     except Exception:
-        pass
-
-    return None
+        return None
 
 
 def parse_batch(content: str) -> BatchProgram:
-    lines = content.splitlines()
     commands: list[CommandLine] = []
-    for line in lines:
-        line = line.strip()
-        if not line or line.startswith('::') or line.upper().startswith('REM '):
-            continue
+    for line in content.splitlines():
         cmd = parse_command(line)
         if cmd is not None:
             commands.append(cmd)

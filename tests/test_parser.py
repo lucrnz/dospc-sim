@@ -3,9 +3,18 @@
 from dospc_sim.parser import (
     Argument,
     BatchProgram,
+    CallCommand,
     CommandLine,
     CommandName,
     EchoCommand,
+    ForCommand,
+    GotoCommand,
+    IfCommand,
+    IfCompareCondition,
+    IfErrorlevelCondition,
+    IfExistCondition,
+    Label,
+    PauseCommand,
     PipeCommand,
     SimpleCommand,
     Switch,
@@ -171,6 +180,72 @@ class TestPipeParsing:
         assert isinstance(r.command, PipeCommand)
         assert r.command.commands[0].command == 'TYPE'
         assert r.command.commands[1].command == 'FIND'
+
+
+class TestBatchControlParsing:
+    def test_goto_command(self):
+        r = parse_command('GOTO target')
+        assert r is not None
+        assert isinstance(r.command, GotoCommand)
+        assert r.command.label == 'TARGET'
+
+    def test_call_command(self):
+        r = parse_command('CALL greet world')
+        assert r is not None
+        assert isinstance(r.command, CallCommand)
+        assert r.command.target.command == 'GREET'
+        assert r.command.target.positional_args == ['world']
+
+    def test_pause_command(self):
+        r = parse_command('PAUSE')
+        assert r is not None
+        assert isinstance(r.command, PauseCommand)
+
+    def test_if_exist_command(self):
+        r = parse_command('IF EXIST test.txt ECHO found')
+        assert r is not None
+        assert isinstance(r.command, IfCommand)
+        assert isinstance(r.command.condition, IfExistCondition)
+        assert r.command.condition.filename == 'test.txt'
+        assert isinstance(r.command.command.command, EchoCommand)
+        assert r.command.command.command.text == 'found'
+
+    def test_if_not_errorlevel_command(self):
+        r = parse_command('IF NOT ERRORLEVEL 2 GOTO done')
+        assert r is not None
+        assert isinstance(r.command, IfCommand)
+        assert r.command.negated is True
+        assert isinstance(r.command.condition, IfErrorlevelCondition)
+        assert r.command.condition.level == 2
+        assert isinstance(r.command.command.command, GotoCommand)
+        assert r.command.command.command.label == 'DONE'
+
+    def test_if_compare_command(self):
+        r = parse_command('IF foo==bar ECHO nope')
+        assert r is not None
+        assert isinstance(r.command, IfCommand)
+        assert isinstance(r.command.condition, IfCompareCondition)
+        assert r.command.condition.left == 'foo'
+        assert r.command.condition.right == 'bar'
+
+    def test_for_command(self):
+        r = parse_command('FOR %%F IN (a b c) DO TYPE %%F')
+        assert r is not None
+        assert isinstance(r.command, ForCommand)
+        assert r.command.var == 'F'
+        assert r.command.items == ['a', 'b', 'c']
+        assert isinstance(r.command.command.command, SimpleCommand)
+        assert r.command.command.command.command == 'TYPE'
+        assert r.command.command.command.positional_args == ['%%F']
+
+    def test_label_command(self):
+        r = parse_command(':loop_here')
+        assert r is not None
+        assert isinstance(r.command, Label)
+        assert r.command.name == 'LOOP_HERE'
+
+    def test_comment_with_bare_rem(self):
+        assert parse_command('REM') is None
 
 
 class TestBatchParsing:
