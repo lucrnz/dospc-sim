@@ -11,7 +11,7 @@ This document details the DOS command compatibility status for the SSH DOS Envir
 | `DIR` | ✅ Fully Implemented | List directory contents | Supports `/W` (wide format) and `/A` (show all) switches |
 | `CD` / `CHDIR` | ✅ Fully Implemented | Change directory | Shows current directory when called without arguments |
 | `MD` / `MKDIR` | ✅ Fully Implemented | Create directory | Creates directories recursively |
-| `RD` / `RMDIR` | ✅ Fully Implemented | Remove directory | Supports `/S` (recursive) and `/Q` (quiet) switches |
+| `RD` / `RMDIR` | ⚠️ Partially Implemented | Remove directory | Supports `/S` (recursive); `/Q` is parsed but does not currently suppress recursive confirmation prompt text |
 | `COPY` | ✅ Fully Implemented | Copy files | Single file copy supported |
 | `DEL` / `ERASE` | ✅ Fully Implemented | Delete files | Supports wildcards (`*`, `?`) and `/Q` switch |
 | `REN` / `RENAME` | ✅ Fully Implemented | Rename files | Single file/directory rename |
@@ -21,7 +21,7 @@ This document details the DOS command compatibility status for the SSH DOS Envir
 | `FIND` | ✅ Fully Implemented | Search for text in a file | Supports `/V` (invert), `/C` (count), `/I` (case-insensitive), `/N` (line numbers), and piped input |
 | `MORE` | ✅ Fully Implemented | Display output one page at a time | Paginated file display; supports piped input |
 | `SORT` | ✅ Fully Implemented | Sort lines alphabetically | Supports `/R` (reverse), `/O file` (output to file), and piped input |
-| `FC` | ✅ Fully Implemented | Compare two files | Supports `/N` (line numbers) switch |
+| `FC` | ⚠️ Partially Implemented | Compare two files | Core file comparison works; `/N` is accepted but line numbers are not currently shown |
 | `EDIT` | ✅ Fully Implemented | Full-screen text editor | Supports cursor navigation, file open/save, Ctrl key shortcuts |
 
 ### System and Environment Commands
@@ -36,8 +36,8 @@ This document details the DOS command compatibility status for the SSH DOS Envir
 | `SET` | ✅ Fully Implemented | Environment variables | Display/set environment variables |
 | `PROMPT` | ✅ Fully Implemented | Change prompt | Supports `$P`, `$G`, `$L`, `$D`, `$T`, `$N`, `$$` meta-characters |
 | `PATH` | ✅ Fully Implemented | Display/set path | View or modify search path |
-| `DATE` | ⚠️ Partially Implemented | Display date | Shows current date (setting not implemented) |
-| `TIME` | ⚠️ Partially Implemented | Display time | Shows current time (setting not implemented) |
+| `DATE` | ⚠️ Partially Implemented | Display date | Shows current date - Setting time not planned |
+| `TIME` | ⚠️ Partially Implemented | Display time | Shows current time - Setting time not planned |
 
 ### I/O Redirection and Pipes
 
@@ -52,8 +52,8 @@ This document details the DOS command compatibility status for the SSH DOS Envir
 
 | Feature | Status | Description | Notes |
 |---------|--------|-------------|-------|
-| `.BAT` Execution | ✅ Fully Implemented | Execute batch files | |
-| `.CMD` Execution | ✅ Fully Implemented | Execute command scripts | |
+| `.BAT` Execution | ⚠️ Partially Implemented | Execute batch files | Works when invoked without extension (e.g., `TEST` resolves `TEST.BAT`); direct `TEST.BAT` invocation is not currently supported |
+| `.CMD` Execution | ⚠️ Partially Implemented | Execute command scripts | Works when invoked without extension (e.g., `SCRIPT` resolves `SCRIPT.CMD`); direct `SCRIPT.CMD` invocation is not currently supported |
 | `%0-%9` Parameters | ✅ Fully Implemented | Command line parameter substitution | |
 | `%VAR%` Expansion | ✅ Fully Implemented | Environment variable expansion | Expanded at execution time |
 | `REM` Comments | ✅ Fully Implemented | Remark/comment lines | |
@@ -61,8 +61,8 @@ This document details the DOS command compatibility status for the SSH DOS Envir
 | Labels (`:LABEL`) | ✅ Fully Implemented | Label lines for GOTO targets | |
 | `GOTO` | ✅ Fully Implemented | Jump to label | Supports forward and backward jumps |
 | `CALL` | ✅ Fully Implemented | Call another batch file | Supports passing arguments |
-| `IF` | ✅ Fully Implemented | Conditional execution | Supports `EXIST`, `ERRORLEVEL`, string comparison (`==`), and `NOT` |
-| `FOR` | ✅ Fully Implemented | Loop construct | Supports `%%var IN (set) DO command` |
+| `IF` | ✅ Fully Implemented | Conditional execution | Supports `EXIST` (files and directories), `ERRORLEVEL`, string comparison (`==`), and `NOT` |
+| `FOR` | ⚠️ Partially Implemented | Loop construct | Supports `%%var IN (set) DO command`; variable substitution currently works reliably with uppercase variable references (e.g., `%%F`) |
 | `PAUSE` | ✅ Fully Implemented | Pause execution | Displays "Press any key to continue . . . " |
 | `ECHO OFF` | ⚠️ Partially Implemented | Command echo suppression | Toggle works; batch commands are not echoed regardless of state |
 | `@` Prefix | ❌ Not Implemented | Suppress echo for single line | |
@@ -128,7 +128,9 @@ This document details the DOS command compatibility status for the SSH DOS Envir
 **Features:**
 - Full-screen text editor using alternate screen buffer
 - Arrow keys, Home/End, PgUp/PgDn navigation
-- Ctrl+S to save, Ctrl+Q to quit, Ctrl+O to open, Ctrl+A to save as
+- Ctrl+S to save, Ctrl+Q to quit (also Ctrl+C), Ctrl+O to open, Ctrl+A to save as
+- Escape key shows help overlay
+- Tab inserts 4 spaces
 - Line numbers displayed in editor
 - Unsaved changes warning on quit
 
@@ -148,13 +150,16 @@ This document details the DOS command compatibility status for the SSH DOS Envir
 ### IF Command (Batch)
 
 **Syntax:**
-- `IF [NOT] EXIST filename command`
+- `IF [NOT] EXIST name command` (checks files and directories)
 - `IF [NOT] ERRORLEVEL number command`
 - `IF [NOT] string1==string2 command`
 
 ### FOR Command (Batch)
 
 **Syntax:** `FOR %%var IN (set) DO command`
+
+**Notes:**
+- Variable replacement is currently case-sensitive in practice; use uppercase variable references for reliable behavior (e.g., `%%F`)
 
 **Example:**
 ```
@@ -168,7 +173,7 @@ FOR %%F IN (file1.txt file2.txt file3.txt) DO TYPE %%F
 1. **Home Directory Restriction**: Users cannot access files outside their home directory
 2. **Path Validation**: All paths are resolved and validated against home directory
 3. **Permission Errors**: Attempts to escape home directory result in "Access denied" errors
-4. **Case-Insensitive File Access**: File lookups use case-insensitive matching for DOS compatibility
+4. **Case-Insensitive Lookups (Partial)**: Read/existence checks use case-insensitive matching for DOS compatibility; write/rename/move/copy/delete paths are more case-sensitive
 
 ### C: Drive Mapping
 
@@ -203,6 +208,34 @@ The following environment variables are available:
 
 1. **Batch ECHO**: `ECHO ON/OFF` toggle works, but batch commands are never echoed during execution regardless of ECHO state
 2. **Wildcards**: Only DEL supports wildcards; COPY and DIR have limited support
+3. **RD `/Q` behavior**: `/Q` is parsed but recursive delete still emits confirmation prompt text
+4. **FC `/N` behavior**: `/N` is parsed but line numbers are not currently shown
+5. **Batch invocation by extension**: Batch scripts resolve by base name (`TEST`), but direct `TEST.BAT` / `SCRIPT.CMD` invocation is not currently supported
+6. **FOR variable case handling**: Lowercase loop variable references (e.g., `%%f`) may not substitute as expected
+
+## Interactive Shell Features
+
+The SSH terminal session provides a full interactive line editor:
+
+### Command History
+
+- **Up/Down arrows** navigate through previously executed commands
+- History is maintained per session
+
+### Tab Completion
+
+- **Command completion**: Typing a partial command name and pressing Tab completes it (or shows matching options)
+- **Filename completion**: Tab-completes file and directory names, including paths with directory components
+- **Batch file completion**: `.BAT` and `.CMD` files in the current directory are offered as completions
+
+### Line Editing
+
+- **Left/Right arrows** move the cursor within the current line
+- **Home/End** jump to the beginning or end of the line
+- **Delete** removes the character at the cursor
+- **Backspace** removes the character before the cursor
+- **Ctrl+C** cancels the current line and shows a new prompt
+- **Ctrl+D** disconnects the session
 
 ## Future Enhancements
 
@@ -210,7 +243,5 @@ Planned features for future releases:
 
 - [ ] Batch `@` prefix for single-line echo suppression
 - [ ] `IF DEFINED` and `IF` / `ELSE` support
-- [ ] Command history and line editing
-- [ ] Tab completion for filenames
 - [ ] Additional commands: ATTRIB, XCOPY, DOSKEY
 - [ ] Network drive simulation (NET USE)
