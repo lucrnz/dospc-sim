@@ -280,7 +280,10 @@ class DOSShell:
         raw_body = self._ast_to_raw(inner) if inner else ''
         for item in for_cmd.items:
             expanded = re.sub(
-                rf'%%{re.escape(for_cmd.var)}', item, raw_body, flags=re.IGNORECASE
+                rf'%%{re.escape(for_cmd.var)}',
+                lambda _match, replacement=item: replacement,
+                raw_body,
+                flags=re.IGNORECASE,
             )
             result = self.execute_command(expanded)
         return result
@@ -385,8 +388,6 @@ class DOSShell:
                         labels[label_match.group(1).upper()] = len(line_index) - 1
 
             pc = 0
-            saved_echo = self._echo_on
-            self._echo_on = True
 
             while pc < len(line_index):
                 raw_line = line_index[pc]
@@ -414,7 +415,6 @@ class DOSShell:
                     else:
                         self._output_line(f'Label not found: {target}')
 
-            self._echo_on = saved_echo
             return self.last_errorlevel
         except _GotoSignal:
             return self.last_errorlevel
@@ -442,9 +442,10 @@ class DOSShell:
                 path = arg
 
         if '*' in path or '?' in path:
-            if '\\' in path:
-                parts = path.rsplit('\\', 1)
-                path, pattern = parts[0], parts[1]
+            separator_index = max(path.rfind('/'), path.rfind('\\'))
+            if separator_index >= 0:
+                pattern = path[separator_index + 1 :]
+                path = path[:separator_index]
             else:
                 pattern = path
                 path = '.'
@@ -571,10 +572,11 @@ class DOSShell:
         if '*' in source or '?' in source:
             import fnmatch
 
-            if '\\' in source:
-                src_dir, src_pattern = source.rsplit('\\', 1)
+            normalized_source = source.replace('/', '\\')
+            if '\\' in normalized_source:
+                src_dir, src_pattern = normalized_source.rsplit('\\', 1)
             else:
-                src_dir, src_pattern = '.', source
+                src_dir, src_pattern = '.', normalized_source
             try:
                 entries = self.fs.list_directory(src_dir)
             except Exception:
@@ -589,14 +591,24 @@ class DOSShell:
             if not matched:
                 self._output_line('The system cannot find the file specified.')
                 return 1
+
+            try:
+                dest_is_dir = self.fs.dir_exists(dest)
+            except Exception:
+                dest_is_dir = False
+            if len(matched) > 1 and not dest_is_dir:
+                self._output_line('The system cannot find the path specified.')
+                return 1
+
             count = 0
             for entry in matched:
                 src_path = entry.name if src_dir == '.' else f'{src_dir}\\{entry.name}'
                 try:
                     self.fs.copy_file(src_path, dest)
-                    count += 1
                 except Exception:
-                    pass
+                    self._output_line('The system cannot find the path specified.')
+                    return 1
+                count += 1
             self._output_line(f'        {count} file(s) copied.')
             return 0
         try:

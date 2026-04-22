@@ -50,6 +50,8 @@ class UserFilesystem:
         if path.startswith('\\') or path.startswith('/'):
             path = path[1:]
 
+        path = path.replace('\\', '/')
+
         # Resolve the path
         if not path or path == '.':
             target = self.current_dir
@@ -68,6 +70,7 @@ class UserFilesystem:
 
         # Case-insensitive resolution for DOS compatibility
         target = self._find_case_insensitive(target)
+        target = target.resolve(strict=False)
 
         # Re-verify security after case-insensitive resolution
         try:
@@ -185,22 +188,23 @@ class UserFilesystem:
             return path
 
         current = self.home_dir
-        for part in rel.parts:
+        for index, part in enumerate(rel.parts):
             candidate = current / part
             if candidate.exists():
                 current = candidate
                 continue
-            # Case-insensitive search in current directory
             part_lower = part.lower()
-            found = False
             if current.exists() and current.is_dir():
                 for item in current.iterdir():
                     if item.name.lower() == part_lower:
                         current = item
-                        found = True
                         break
-            if not found:
-                return path
+                else:
+                    remainder = Path(*rel.parts[index:])
+                    return current / remainder
+            else:
+                remainder = Path(*rel.parts[index:])
+                return current / remainder
         return current
 
     def read_file(self, filename: str) -> str:

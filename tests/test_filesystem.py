@@ -313,6 +313,13 @@ class TestUserFilesystem:
         filesystem.write_file('MyDir/test.txt', 'hello')
         assert filesystem.read_file('mydir/TEST.TXT') == 'hello'
 
+    def test_write_file_uses_case_insensitive_parent_resolution(self, filesystem):
+        """Test writing under an existing mixed-case parent directory."""
+        filesystem.make_directory('MyDir')
+        filesystem.write_file('mydir/new.txt', 'hello')
+        assert filesystem.read_file('MyDir/new.txt') == 'hello'
+        assert filesystem.read_file('mydir/new.txt') == 'hello'
+
     def test_case_insensitive_security_preserved(self, filesystem):
         """Case-insensitive resolution must not allow escaping home dir."""
         filesystem.make_directory('subdir')

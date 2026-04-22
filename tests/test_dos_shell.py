@@ -97,6 +97,17 @@ class TestDOSShell:
         output = '\n'.join(shell._output_capture)
         assert 'readme.txt' in output
 
+    def test_cmd_dir_wildcard_with_forward_slash_path(self, shell):
+        """Test DIR wildcard supports forward slash path separators."""
+        shell.fs.make_directory('sub')
+        shell.fs.write_file('sub/file1.txt', 'aaa')
+        shell.fs.write_file('sub/file2.log', 'bbb')
+        shell._output_capture.clear()
+        shell.cmd_dir(['sub/*.txt'])
+        output = '\n'.join(shell._output_capture)
+        assert 'file1.txt' in output
+        assert 'file2.log' not in output
+
     def test_cmd_cd(self, shell):
         """Test CD command."""
         shell.fs.make_directory('subdir')
@@ -207,6 +218,40 @@ class TestDOSShell:
         shell._output_capture.clear()
         result = shell.cmd_copy(['*.xyz', 'somewhere'])
         assert result == 1
+
+    def test_cmd_copy_wildcard_requires_existing_directory_for_multiple_files(
+        self, shell
+    ):
+        """Test COPY wildcard fails when destination is not an existing directory."""
+        shell.fs.write_file('doc1.txt', 'one')
+        shell.fs.write_file('doc2.txt', 'two')
+        shell._output_capture.clear()
+        result = shell.cmd_copy(['*.txt', 'backup'])
+        output = '\n'.join(shell._output_capture)
+        assert result == 1
+        assert 'The system cannot find the path specified.' in output
+        assert not shell.fs.file_exists('backup')
+
+    def test_cmd_copy_wildcard_surfaces_destination_errors(self, shell):
+        """Test COPY wildcard does not swallow destination errors."""
+        shell.fs.write_file('doc1.txt', 'one')
+        shell._output_capture.clear()
+        result = shell.cmd_copy(['*.txt', '..'])
+        output = '\n'.join(shell._output_capture)
+        assert result == 1
+        assert 'The system cannot find the path specified.' in output
+
+    def test_cmd_copy_wildcard_with_forward_slash_path(self, shell):
+        """Test COPY wildcard supports forward slash path separators."""
+        shell.fs.make_directory('sub')
+        shell.fs.write_file('sub/doc1.txt', 'one')
+        shell.fs.make_directory('backup')
+        shell._output_capture.clear()
+        result = shell.cmd_copy(['sub/*.txt', 'backup'])
+        output = '\n'.join(shell._output_capture)
+        assert result == 0
+        assert '1 file(s) copied' in output
+        assert shell.fs.file_exists('backup/doc1.txt')
 
     def test_cmd_del(self, shell):
         """Test DEL command."""
@@ -1038,6 +1083,14 @@ ECHO Arrived"""
         assert 'a a' in output
         assert 'b b' in output
 
+    def test_for_loop_preserves_backslashes_in_item_values(self, shell):
+        batch = r'FOR %%F IN (C:\temp) DO ECHO %%f'
+        shell.fs.write_file('test.bat', batch)
+        shell._output_capture.clear()
+        shell.execute_command('TEST')
+        output = '\n'.join(shell._output_capture)
+        assert 'C:\\temp' in output
+
     # ==================== Batch CALL tests ====================
 
     def test_call_batch(self, shell):
@@ -1131,6 +1184,20 @@ ECHO Visible"""
         # After ECHO ON, the ECHO Visible command should be echoed
         assert 'C:\\>ECHO Visible' in output
         assert 'Visible' in output
+
+    def test_call_batch_inherits_echo_off_state(self, shell):
+        """Nested batch calls should inherit current ECHO state."""
+        shell.fs.write_file('sub.bat', 'ECHO In Subroutine')
+        batch = """ECHO OFF
+CALL SUB
+ECHO After"""
+        shell.fs.write_file('main.bat', batch)
+        shell._output_capture.clear()
+        shell.execute_command('MAIN')
+        output = '\n'.join(shell._output_capture)
+        assert 'C:\\>ECHO In Subroutine' not in output
+        assert 'In Subroutine' in output
+        assert 'After' in output
 
     # ==================== PROMPT Variable tests ====================
 
