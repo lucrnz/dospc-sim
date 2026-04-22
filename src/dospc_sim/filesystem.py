@@ -66,6 +66,15 @@ class UserFilesystem:
         except ValueError as exc:
             raise PermissionError('Access denied: path outside home directory') from exc
 
+        # Case-insensitive resolution for DOS compatibility
+        target = self._find_case_insensitive(target)
+
+        # Re-verify security after case-insensitive resolution
+        try:
+            target.relative_to(self.home_dir)
+        except ValueError as exc:
+            raise PermissionError('Access denied: path outside home directory') from exc
+
         return target
 
     def get_current_path(self) -> str:
@@ -161,23 +170,42 @@ class UserFilesystem:
         shutil.rmtree(target)
 
     def _find_case_insensitive(self, path: Path) -> Path:
-        """Find a file/directory with case-insensitive matching."""
+        """Find a file/directory with case-insensitive matching.
+
+        Walks each segment of the path relative to home_dir, resolving
+        case mismatches at every level so that multi-segment DOS paths
+        like ``MYDIR\\SUBDIR\\FILE.TXT`` work on case-sensitive hosts.
+        """
         if path.exists():
             return path
 
-        # Try case-insensitive search in parent directory
-        parent = path.parent
-        name_lower = path.name.lower()
-        if parent.exists():
-            for item in parent.iterdir():
-                if item.name.lower() == name_lower:
-                    return item
-        return path
+        try:
+            rel = path.relative_to(self.home_dir)
+        except ValueError:
+            return path
+
+        current = self.home_dir
+        for part in rel.parts:
+            candidate = current / part
+            if candidate.exists():
+                current = candidate
+                continue
+            # Case-insensitive search in current directory
+            part_lower = part.lower()
+            found = False
+            if current.exists() and current.is_dir():
+                for item in current.iterdir():
+                    if item.name.lower() == part_lower:
+                        current = item
+                        found = True
+                        break
+            if not found:
+                return path
+        return current
 
     def read_file(self, filename: str) -> str:
         """Read contents of a text file."""
         target = self._resolve_path(filename)
-        target = self._find_case_insensitive(target)
 
         if not target.exists():
             raise FileNotFoundError(f'File not found: {filename}')
@@ -258,17 +286,7 @@ class UserFilesystem:
         """Check if a file exists (case-insensitive for DOS compatibility)."""
         try:
             target = self._resolve_path(filename)
-            if target.exists() and target.is_file():
-                return True
-
-            # Case-insensitive search in parent directory
-            parent = target.parent
-            name_lower = target.name.lower()
-            if parent.exists():
-                for item in parent.iterdir():
-                    if item.name.lower() == name_lower and item.is_file():
-                        return True
-            return False
+            return target.exists() and target.is_file()
         except (PermissionError, FileNotFoundError):
             return False
 
@@ -276,17 +294,7 @@ class UserFilesystem:
         """Check if a directory exists (case-insensitive for DOS compatibility)."""
         try:
             target = self._resolve_path(dirname)
-            if target.exists() and target.is_dir():
-                return True
-
-            # Case-insensitive search in parent directory
-            parent = target.parent
-            name_lower = target.name.lower()
-            if parent.exists():
-                for item in parent.iterdir():
-                    if item.name.lower() == name_lower and item.is_dir():
-                        return True
-            return False
+            return target.exists() and target.is_dir()
         except (PermissionError, FileNotFoundError):
             return False
 
@@ -314,7 +322,6 @@ class UserFilesystem:
     def get_file_info(self, filename: str):
         """Get FileInfo for a specific file."""
         target = self._resolve_path(filename)
-        target = self._find_case_insensitive(target)
 
         if not target.exists():
             raise FileNotFoundError(f'File not found: {filename}')

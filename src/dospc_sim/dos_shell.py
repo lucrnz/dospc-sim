@@ -279,7 +279,9 @@ class DOSShell:
         inner = for_cmd.command
         raw_body = self._ast_to_raw(inner) if inner else ''
         for item in for_cmd.items:
-            expanded = raw_body.replace(f'%%{for_cmd.var}', item)
+            expanded = re.sub(
+                rf'%%{re.escape(for_cmd.var)}', item, raw_body, flags=re.IGNORECASE
+            )
             result = self.execute_command(expanded)
         return result
 
@@ -321,6 +323,20 @@ class DOSShell:
         return ''
 
     def _find_batch_file(self, name: str) -> str | None:
+        upper = name.upper()
+        if upper.endswith('.BAT') or upper.endswith('.CMD'):
+            if self.fs.file_exists(name):
+                return name
+            for path_dir in self.environment['PATH'].split(';'):
+                try:
+                    path_dir = path_dir.strip()
+                    if path_dir:
+                        test_path = f'{path_dir}\\{name}'
+                        if self.fs.file_exists(test_path):
+                            return test_path
+                except Exception:
+                    continue
+            return None
         for ext in ['.BAT', '.CMD']:
             test_path = f'{name}{ext}'
             if self.fs.file_exists(test_path):
@@ -385,6 +401,10 @@ class DOSShell:
                 if parsed is None:
                     continue
 
+                # Echo the command line before executing (DOS batch behavior)
+                if self._echo_on and not isinstance(parsed.command, Label):
+                    self._output_line(f'{self.get_prompt()}{expanded}')
+
                 try:
                     self._execute_parsed(parsed)
                 except _GotoSignal as g:
@@ -405,9 +425,12 @@ class DOSShell:
     # ==================== DOS Commands ====================
 
     def cmd_dir(self, args: list[str]) -> int:
+        import fnmatch
+
         path = '.'
         show_all = False
         wide_format = False
+        pattern = None
 
         for arg in args:
             upper = arg.upper()
@@ -418,8 +441,22 @@ class DOSShell:
             elif not arg.startswith('/'):
                 path = arg
 
+        if '*' in path or '?' in path:
+            if '\\' in path:
+                parts = path.rsplit('\\', 1)
+                path, pattern = parts[0], parts[1]
+            else:
+                pattern = path
+                path = '.'
+
         try:
             entries = self.fs.list_directory(path)
+            if pattern:
+                entries = [
+                    e
+                    for e in entries
+                    if fnmatch.fnmatch(e.name.upper(), pattern.upper())
+                ]
             if not wide_format:
                 self._output_line(
                     f' Volume in drive {self.fs._drive_letter} is DOSPC-SIM'
@@ -501,18 +538,20 @@ class DOSShell:
             self._output_line('The syntax of the command is incorrect.')
             return 1
         recursive = False
+        quiet = False
         dirs = []
         for arg in args:
             if arg.upper() == '/S':
                 recursive = True
             elif arg.upper() == '/Q':
-                pass
+                quiet = True
             elif not arg.startswith('/'):
                 dirs.append(arg)
         for dirname in dirs:
             try:
                 if recursive:
-                    self._output('Are you sure (Y/N)? ')
+                    if not quiet:
+                        self._output('Are you sure (Y/N)? ')
                     self.fs.remove_directory_recursive(dirname)
                 else:
                     self.fs.remove_directory(dirname)
@@ -529,6 +568,37 @@ class DOSShell:
             return 1
         source = args[0]
         dest = args[-1]
+        if '*' in source or '?' in source:
+            import fnmatch
+
+            if '\\' in source:
+                src_dir, src_pattern = source.rsplit('\\', 1)
+            else:
+                src_dir, src_pattern = '.', source
+            try:
+                entries = self.fs.list_directory(src_dir)
+            except Exception:
+                self._output_line('The system cannot find the file specified.')
+                return 1
+            matched = [
+                e
+                for e in entries
+                if not e.is_dir
+                and fnmatch.fnmatch(e.name.upper(), src_pattern.upper())
+            ]
+            if not matched:
+                self._output_line('The system cannot find the file specified.')
+                return 1
+            count = 0
+            for entry in matched:
+                src_path = entry.name if src_dir == '.' else f'{src_dir}\\{entry.name}'
+                try:
+                    self.fs.copy_file(src_path, dest)
+                    count += 1
+                except Exception:
+                    pass
+            self._output_line(f'        {count} file(s) copied.')
+            return 0
         try:
             self.fs.copy_file(source, dest)
             self._output_line('        1 file(s) copied.')
@@ -970,11 +1040,12 @@ class DOSShell:
         if len(args) < 2:
             self._output_line('Usage: FC [/N] file1 file2')
             return 1
+        show_numbers = any(arg.upper() == '/N' for arg in args)
         filenames = []
         for arg in args:
             if arg.upper() == '/N':
-                pass
-            elif not arg.startswith('/'):
+                continue
+            if not arg.startswith('/'):
                 filenames.append(arg)
         if len(filenames) < 2:
             self._output_line('Usage: FC [/N] file1 file2')
@@ -1006,19 +1077,39 @@ class DOSShell:
         patch_lines = list(diff)[2:]
         in_hunk_1 = False
         in_hunk_2 = False
+        old_line = 1
+        new_line = 1
         for pl in patch_lines:
+            if pl.startswith('@@'):
+                in_hunk_1 = False
+                in_hunk_2 = False
+                match = re.match(r'^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@$', pl)
+                if match:
+                    old_line = int(match.group(1))
+                    new_line = int(match.group(2))
+                continue
             if pl.startswith('-'):
                 if not in_hunk_1:
                     self._output_line(f'***** {filenames[0]}')
                     in_hunk_1 = True
                     in_hunk_2 = False
-                self._output_line(pl[1:])
+                line_text = pl[1:]
+                if show_numbers:
+                    self._output_line(f'{old_line}: {line_text}')
+                else:
+                    self._output_line(line_text)
+                old_line += 1
             elif pl.startswith('+'):
                 if not in_hunk_2:
                     self._output_line(f'***** {filenames[1]}')
                     in_hunk_2 = True
                     in_hunk_1 = False
-                self._output_line(pl[1:])
+                line_text = pl[1:]
+                if show_numbers:
+                    self._output_line(f'{new_line}: {line_text}')
+                else:
+                    self._output_line(line_text)
+                new_line += 1
         return 1
 
     def cmd_edit(self, args: list[str]) -> int:

@@ -252,3 +252,71 @@ class TestUserFilesystem:
         assert file_entry.size == len('content')
         assert file_entry.is_dir is False
         assert ' ' in file_entry.attributes  # Not a directory
+
+    # ==================== Case-insensitive path tests ====================
+
+    def test_read_file_case_insensitive(self, filesystem):
+        """Test reading a file with mismatched case."""
+        filesystem.write_file('hello.txt', 'world')
+        assert filesystem.read_file('HELLO.TXT') == 'world'
+        assert filesystem.read_file('Hello.Txt') == 'world'
+
+    def test_delete_file_case_insensitive(self, filesystem):
+        """Test deleting a file with mismatched case."""
+        filesystem.write_file('remove_me.txt', 'data')
+        filesystem.delete_file('REMOVE_ME.TXT')
+        assert not filesystem.file_exists('remove_me.txt')
+
+    def test_copy_file_case_insensitive(self, filesystem):
+        """Test copying a file with mismatched case on source."""
+        filesystem.write_file('original.txt', 'content')
+        filesystem.copy_file('ORIGINAL.TXT', 'copy.txt')
+        assert filesystem.read_file('copy.txt') == 'content'
+
+    def test_move_file_case_insensitive(self, filesystem):
+        """Test moving a file with mismatched case on source."""
+        filesystem.write_file('moveme.txt', 'data')
+        filesystem.move_file('MOVEME.TXT', 'moved.txt')
+        assert filesystem.read_file('moved.txt') == 'data'
+        assert not filesystem.file_exists('moveme.txt')
+
+    def test_rename_case_insensitive(self, filesystem):
+        """Test renaming a file with mismatched case on source."""
+        filesystem.write_file('oldname.txt', 'data')
+        filesystem.rename('OLDNAME.TXT', 'newname.txt')
+        assert filesystem.read_file('newname.txt') == 'data'
+        assert not filesystem.file_exists('oldname.txt')
+
+    def test_change_directory_case_insensitive(self, filesystem):
+        """Test changing directory with mismatched case."""
+        filesystem.make_directory('MyFolder')
+        filesystem.change_directory('myfolder')
+        path = filesystem.get_current_path()
+        assert 'myfolder' in path.lower()
+
+    def test_remove_directory_case_insensitive(self, filesystem):
+        """Test removing a directory with mismatched case."""
+        filesystem.make_directory('RemoveDir')
+        filesystem.remove_directory('removedir')
+        assert not filesystem.dir_exists('RemoveDir')
+
+    def test_remove_directory_recursive_case_insensitive(self, filesystem):
+        """Test recursive directory removal with mismatched case."""
+        filesystem.make_directory('DeepDir')
+        filesystem.write_file('DeepDir/file.txt', 'data')
+        filesystem.remove_directory_recursive('deepdir')
+        assert not filesystem.dir_exists('DeepDir')
+
+    def test_case_insensitive_multi_segment_path(self, filesystem):
+        """Test case-insensitive matching across multiple path segments."""
+        filesystem.make_directory('MyDir')
+        filesystem.write_file('MyDir/test.txt', 'hello')
+        assert filesystem.read_file('mydir/TEST.TXT') == 'hello'
+
+    def test_case_insensitive_security_preserved(self, filesystem):
+        """Case-insensitive resolution must not allow escaping home dir."""
+        filesystem.make_directory('subdir')
+        filesystem.change_directory('subdir')
+        filesystem.change_directory('..')
+        with pytest.raises(PermissionError):
+            filesystem._resolve_path('..')

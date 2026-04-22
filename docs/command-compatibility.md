@@ -8,11 +8,11 @@ This document details the DOS command compatibility status for the SSH DOS Envir
 
 | Command | Status | Description | Notes |
 |---------|--------|-------------|-------|
-| `DIR` | ✅ Fully Implemented | List directory contents | Supports `/W` (wide format) and `/A` (show all) switches |
+| `DIR` | ✅ Fully Implemented | List directory contents | Supports `/W` (wide format), `/A` (show all), and wildcard patterns (`*`, `?`) |
 | `CD` / `CHDIR` | ✅ Fully Implemented | Change directory | Shows current directory when called without arguments |
 | `MD` / `MKDIR` | ✅ Fully Implemented | Create directory | Creates directories recursively |
-| `RD` / `RMDIR` | ⚠️ Partially Implemented | Remove directory | Supports `/S` (recursive); `/Q` is parsed but does not currently suppress recursive confirmation prompt text |
-| `COPY` | ✅ Fully Implemented | Copy files | Single file copy supported |
+| `RD` / `RMDIR` | ✅ Fully Implemented | Remove directory | Supports `/S` (recursive) and `/Q` (quiet, suppresses confirmation prompt) |
+| `COPY` | ✅ Fully Implemented | Copy files | Single file and wildcard (`*`, `?`) copy supported |
 | `DEL` / `ERASE` | ✅ Fully Implemented | Delete files | Supports wildcards (`*`, `?`) and `/Q` switch |
 | `REN` / `RENAME` | ✅ Fully Implemented | Rename files | Single file/directory rename |
 | `MOVE` | ✅ Fully Implemented | Move files | Moves files between directories |
@@ -21,7 +21,7 @@ This document details the DOS command compatibility status for the SSH DOS Envir
 | `FIND` | ✅ Fully Implemented | Search for text in a file | Supports `/V` (invert), `/C` (count), `/I` (case-insensitive), `/N` (line numbers), and piped input |
 | `MORE` | ✅ Fully Implemented | Display output one page at a time | Paginated file display; supports piped input |
 | `SORT` | ✅ Fully Implemented | Sort lines alphabetically | Supports `/R` (reverse), `/O file` (output to file), and piped input |
-| `FC` | ⚠️ Partially Implemented | Compare two files | Core file comparison works; `/N` is accepted but line numbers are not currently shown |
+| `FC` | ✅ Fully Implemented | Compare two files | File comparison with `/N` line number display |
 | `EDIT` | ✅ Fully Implemented | Full-screen text editor | Supports cursor navigation, file open/save, Ctrl key shortcuts |
 
 ### System and Environment Commands
@@ -52,8 +52,8 @@ This document details the DOS command compatibility status for the SSH DOS Envir
 
 | Feature | Status | Description | Notes |
 |---------|--------|-------------|-------|
-| `.BAT` Execution | ⚠️ Partially Implemented | Execute batch files | Works when invoked without extension (e.g., `TEST` resolves `TEST.BAT`); direct `TEST.BAT` invocation is not currently supported |
-| `.CMD` Execution | ⚠️ Partially Implemented | Execute command scripts | Works when invoked without extension (e.g., `SCRIPT` resolves `SCRIPT.CMD`); direct `SCRIPT.CMD` invocation is not currently supported |
+| `.BAT` Execution | ✅ Fully Implemented | Execute batch files | Works with both basename (`TEST`) and explicit extension (`TEST.BAT`) |
+| `.CMD` Execution | ✅ Fully Implemented | Execute command scripts | Works with both basename (`SCRIPT`) and explicit extension (`SCRIPT.CMD`) |
 | `%0-%9` Parameters | ✅ Fully Implemented | Command line parameter substitution | |
 | `%VAR%` Expansion | ✅ Fully Implemented | Environment variable expansion | Expanded at execution time |
 | `REM` Comments | ✅ Fully Implemented | Remark/comment lines | |
@@ -62,9 +62,9 @@ This document details the DOS command compatibility status for the SSH DOS Envir
 | `GOTO` | ✅ Fully Implemented | Jump to label | Supports forward and backward jumps |
 | `CALL` | ✅ Fully Implemented | Call another batch file | Supports passing arguments |
 | `IF` | ✅ Fully Implemented | Conditional execution | Supports `EXIST` (files and directories), `ERRORLEVEL`, string comparison (`==`), and `NOT` |
-| `FOR` | ⚠️ Partially Implemented | Loop construct | Supports `%%var IN (set) DO command`; variable substitution currently works reliably with uppercase variable references (e.g., `%%F`) |
+| `FOR` | ✅ Fully Implemented | Loop construct | Supports `%%var IN (set) DO command`; variable substitution works with any case (`%%F`, `%%f`) |
 | `PAUSE` | ✅ Fully Implemented | Pause execution | Displays "Press any key to continue . . . " |
-| `ECHO OFF` | ⚠️ Partially Implemented | Command echo suppression | Toggle works; batch commands are not echoed regardless of state |
+| `ECHO OFF` | ✅ Fully Implemented | Command echo suppression | Toggle works; batch commands are echoed when ECHO is ON (default) and suppressed when ECHO is OFF |
 | `@` Prefix | ❌ Not Implemented | Suppress echo for single line | |
 | `IF DEFINED` | ❌ Not Implemented | Check if variable is defined | |
 | `IF` / `ELSE` | ❌ Not Implemented | Else clause for conditionals | |
@@ -159,7 +159,7 @@ This document details the DOS command compatibility status for the SSH DOS Envir
 **Syntax:** `FOR %%var IN (set) DO command`
 
 **Notes:**
-- Variable replacement is currently case-sensitive in practice; use uppercase variable references for reliable behavior (e.g., `%%F`)
+- Variable replacement is case-insensitive; both `%%F` and `%%f` work reliably
 
 **Example:**
 ```
@@ -173,7 +173,7 @@ FOR %%F IN (file1.txt file2.txt file3.txt) DO TYPE %%F
 1. **Home Directory Restriction**: Users cannot access files outside their home directory
 2. **Path Validation**: All paths are resolved and validated against home directory
 3. **Permission Errors**: Attempts to escape home directory result in "Access denied" errors
-4. **Case-Insensitive Lookups (Partial)**: Read/existence checks use case-insensitive matching for DOS compatibility; write/rename/move/copy/delete paths are more case-sensitive
+4. **Case-Insensitive Lookups**: All filesystem operations (read, write, rename, move, copy, delete) use case-insensitive path matching for DOS compatibility; multi-segment paths are resolved segment-by-segment
 
 ### C: Drive Mapping
 
@@ -206,12 +206,12 @@ The following environment variables are available:
 
 ### Partial Implementations
 
-1. **Batch ECHO**: `ECHO ON/OFF` toggle works, but batch commands are never echoed during execution regardless of ECHO state
-2. **Wildcards**: Only DEL supports wildcards; COPY and DIR have limited support
-3. **RD `/Q` behavior**: `/Q` is parsed but recursive delete still emits confirmation prompt text
-4. **FC `/N` behavior**: `/N` is parsed but line numbers are not currently shown
-5. **Batch invocation by extension**: Batch scripts resolve by base name (`TEST`), but direct `TEST.BAT` / `SCRIPT.CMD` invocation is not currently supported
-6. **FOR variable case handling**: Lowercase loop variable references (e.g., `%%f`) may not substitute as expected
+1. ~~**Batch ECHO**: Resolved — `ECHO ON/OFF` toggle now correctly controls whether batch commands are echoed during execution~~
+2. ~~**Wildcards**: Resolved — DEL, COPY, and DIR all support wildcard patterns (`*`, `?`)~~
+3. ~~**RD `/Q` behavior**: Resolved~~
+4. ~~**FC `/N` behavior**: Resolved~~
+5. ~~**Batch invocation by extension**: Resolved — both basename and explicit extension invocation now work~~
+6. ~~**FOR variable case handling**: Resolved~~
 
 ## Interactive Shell Features
 

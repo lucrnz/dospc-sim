@@ -65,6 +65,38 @@ class TestDOSShell:
         assert 'testdir' in output
         assert '<DIR>' in output
 
+    def test_cmd_dir_wildcard(self, shell):
+        """Test DIR with wildcard pattern filters listing."""
+        shell.fs.write_file('file1.txt', 'aaa')
+        shell.fs.write_file('file2.txt', 'bbb')
+        shell.fs.write_file('file3.log', 'ccc')
+        shell._output_capture.clear()
+        shell.cmd_dir(['*.txt'])
+        output = '\n'.join(shell._output_capture)
+        assert 'file1.txt' in output
+        assert 'file2.txt' in output
+        assert 'file3.log' not in output
+
+    def test_cmd_dir_wildcard_question_mark(self, shell):
+        """Test DIR with ? wildcard."""
+        shell.fs.write_file('a1.dat', 'x')
+        shell.fs.write_file('b2.dat', 'x')
+        shell.fs.write_file('cc.dat', 'x')
+        shell._output_capture.clear()
+        shell.cmd_dir(['??.dat'])
+        output = '\n'.join(shell._output_capture)
+        assert 'a1.dat' in output
+        assert 'b2.dat' in output
+        assert 'cc.dat' in output
+
+    def test_cmd_dir_no_wildcard_unchanged(self, shell):
+        """Test that DIR without wildcards still works as before."""
+        shell.fs.write_file('readme.txt', 'hello')
+        shell._output_capture.clear()
+        shell.cmd_dir([])
+        output = '\n'.join(shell._output_capture)
+        assert 'readme.txt' in output
+
     def test_cmd_cd(self, shell):
         """Test CD command."""
         shell.fs.make_directory('subdir')
@@ -119,9 +151,26 @@ class TestDOSShell:
         shell.fs.make_directory('parent/child')
         shell.fs.write_file('parent/file.txt', 'content')
 
+        shell._output_capture.clear()
         result = shell.cmd_rd(['/S', 'parent'])
+        output = '\n'.join(shell._output_capture)
+
         assert result == 0
         assert not shell.fs.dir_exists('parent')
+        assert 'Are you sure (Y/N)?' in output
+
+    def test_cmd_rd_recursive_quiet(self, shell):
+        """Test RD with /S /Q suppresses confirmation prompt text."""
+        shell.fs.make_directory('parent/child')
+        shell.fs.write_file('parent/file.txt', 'content')
+
+        shell._output_capture.clear()
+        result = shell.cmd_rd(['/S', '/Q', 'parent'])
+        output = '\n'.join(shell._output_capture)
+
+        assert result == 0
+        assert not shell.fs.dir_exists('parent')
+        assert 'Are you sure (Y/N)?' not in output
 
     def test_cmd_copy(self, shell):
         """Test COPY command."""
@@ -135,6 +184,28 @@ class TestDOSShell:
     def test_cmd_copy_not_found(self, shell):
         """Test COPY with non-existent source."""
         result = shell.cmd_copy(['nonexistent.txt', 'dest.txt'])
+        assert result == 1
+
+    def test_cmd_copy_wildcard(self, shell):
+        """Test COPY with wildcard copies multiple files."""
+        shell.fs.write_file('doc1.txt', 'one')
+        shell.fs.write_file('doc2.txt', 'two')
+        shell.fs.write_file('image.png', 'img')
+        shell.fs.make_directory('backup')
+        shell._output_capture.clear()
+        result = shell.cmd_copy(['*.txt', 'backup'])
+        output = '\n'.join(shell._output_capture)
+        assert result == 0
+        assert '2 file(s) copied' in output
+        assert shell.fs.file_exists('backup/doc1.txt')
+        assert shell.fs.file_exists('backup/doc2.txt')
+        assert not shell.fs.file_exists('backup/image.png')
+
+    def test_cmd_copy_wildcard_no_match(self, shell):
+        """Test COPY with wildcard that matches nothing."""
+        shell.fs.write_file('file.log', 'data')
+        shell._output_capture.clear()
+        result = shell.cmd_copy(['*.xyz', 'somewhere'])
         assert result == 1
 
     def test_cmd_del(self, shell):
@@ -365,6 +436,36 @@ ECHO %2"""
         assert 'arg1' in output
         assert 'arg2' in output
 
+    def test_batch_file_direct_bat_invocation(self, shell):
+        """Test that TEST.BAT can be invoked directly with the extension."""
+        batch_content = """ECHO Direct BAT"""
+        shell.fs.write_file('test.bat', batch_content)
+        shell._output_capture.clear()
+        result = shell.execute_command('TEST.BAT')
+        output = '\n'.join(shell._output_capture)
+        assert result == 0
+        assert 'Direct BAT' in output
+
+    def test_batch_file_direct_cmd_invocation(self, shell):
+        """Test that SCRIPT.CMD can be invoked directly with the extension."""
+        batch_content = """ECHO Direct CMD"""
+        shell.fs.write_file('script.cmd', batch_content)
+        shell._output_capture.clear()
+        result = shell.execute_command('SCRIPT.CMD')
+        output = '\n'.join(shell._output_capture)
+        assert result == 0
+        assert 'Direct CMD' in output
+
+    def test_batch_file_basename_still_works(self, shell):
+        """Test that basename invocation still works after direct extension support."""
+        batch_content = """ECHO Basename OK"""
+        shell.fs.write_file('mytest.bat', batch_content)
+        shell._output_capture.clear()
+        result = shell.execute_command('MYTEST')
+        output = '\n'.join(shell._output_capture)
+        assert result == 0
+        assert 'Basename OK' in output
+
     def test_comment_lines(self, shell):
         """Test that comment lines are ignored."""
         result = shell.execute_command(':: This is a comment')
@@ -593,6 +694,34 @@ ECHO %2"""
         assert 'world' in output
         assert 'earth' in output
 
+    def test_cmd_fc_numbers_switch(self, shell):
+        """Test FC /N includes line numbers for differences."""
+        shell.fs.write_file('a.txt', 'hello\nworld')
+        shell.fs.write_file('b.txt', 'hello\nearth')
+
+        shell._output_capture.clear()
+        result = shell.cmd_fc(['/N', 'a.txt', 'b.txt'])
+        output = '\n'.join(shell._output_capture)
+
+        assert result == 1
+        assert '2: world' in output
+        assert '2: earth' in output
+
+    def test_cmd_fc_without_numbers_switch(self, shell):
+        """Test FC without /N keeps original output format."""
+        shell.fs.write_file('a.txt', 'hello\nworld')
+        shell.fs.write_file('b.txt', 'hello\nearth')
+
+        shell._output_capture.clear()
+        result = shell.cmd_fc(['a.txt', 'b.txt'])
+        output = '\n'.join(shell._output_capture)
+
+        assert result == 1
+        assert 'world' in output
+        assert 'earth' in output
+        assert '2: world' not in output
+        assert '2: earth' not in output
+
     def test_cmd_fc_no_args(self, shell):
         """Test FC with no arguments."""
         result = shell.cmd_fc([])
@@ -794,7 +923,8 @@ ECHO Done"""
         assert 'Done' in output
 
     def test_if_exist_false(self, shell):
-        batch = """IF EXIST missing.txt ECHO Found
+        batch = """ECHO OFF
+IF EXIST missing.txt ECHO Found
 ECHO Done"""
         shell.fs.write_file('test.bat', batch)
         shell._output_capture.clear()
@@ -823,7 +953,8 @@ ECHO Done"""
         assert 'Failed' in output
 
     def test_if_errorlevel_not_met(self, shell):
-        batch = """IF ERRORLEVEL 1 ECHO Failed
+        batch = """ECHO OFF
+IF ERRORLEVEL 1 ECHO Failed
 ECHO Done"""
         shell.fs.write_file('test.bat', batch)
         shell.last_errorlevel = 0
@@ -843,7 +974,8 @@ ECHO Done"""
         assert 'Match' in output
 
     def test_if_string_inequality(self, shell):
-        batch = """IF hello==world ECHO Match
+        batch = """ECHO OFF
+IF hello==world ECHO Match
 ECHO Done"""
         shell.fs.write_file('test.bat', batch)
         shell._output_capture.clear()
@@ -886,6 +1018,25 @@ ECHO Arrived"""
         output = '\n'.join(shell._output_capture)
         assert 'content a' in output
         assert 'content b' in output
+
+    def test_for_loop_lowercase_reference(self, shell):
+        batch = 'FOR %%F IN (a b c) DO ECHO %%f'
+        shell.fs.write_file('test.bat', batch)
+        shell._output_capture.clear()
+        shell.execute_command('TEST')
+        output = '\n'.join(shell._output_capture)
+        assert 'a' in output
+        assert 'b' in output
+        assert 'c' in output
+
+    def test_for_loop_mixed_case_references(self, shell):
+        batch = """FOR %%F IN (a b) DO ECHO %%F %%f"""
+        shell.fs.write_file('test.bat', batch)
+        shell._output_capture.clear()
+        shell.execute_command('TEST')
+        output = '\n'.join(shell._output_capture)
+        assert 'a a' in output
+        assert 'b b' in output
 
     # ==================== Batch CALL tests ====================
 
@@ -935,6 +1086,51 @@ ECHO Still works"""
         shell.execute_command('TEST')
         output = '\n'.join(shell._output_capture)
         assert 'Still works' in output
+
+    def test_batch_echo_on_echoes_commands(self, shell):
+        """With ECHO ON (default), batch commands are echoed before execution."""
+        batch = """ECHO Hello"""
+        shell.fs.write_file('test.bat', batch)
+        shell._output_capture.clear()
+        shell.execute_command('TEST')
+        output = '\n'.join(shell._output_capture)
+        # The echoed command line should include the prompt and the command
+        assert 'C:\\>ECHO Hello' in output
+        # The command output itself should also appear
+        assert 'Hello' in output
+
+    def test_batch_echo_off_suppresses_echo(self, shell):
+        """ECHO OFF suppresses command echoing for subsequent lines."""
+        batch = """ECHO OFF
+ECHO Line1
+ECHO Line2"""
+        shell.fs.write_file('test.bat', batch)
+        shell._output_capture.clear()
+        shell.execute_command('TEST')
+        output = '\n'.join(shell._output_capture)
+        # After ECHO OFF, commands should NOT be echoed
+        assert 'C:\\>ECHO Line1' not in output
+        assert 'C:\\>ECHO Line2' not in output
+        # But their output should still appear
+        assert 'Line1' in output
+        assert 'Line2' in output
+
+    def test_batch_echo_on_off_toggle(self, shell):
+        """ECHO can be toggled on and off within a batch file."""
+        batch = """ECHO OFF
+ECHO Silent
+ECHO ON
+ECHO Visible"""
+        shell.fs.write_file('test.bat', batch)
+        shell._output_capture.clear()
+        shell.execute_command('TEST')
+        output = '\n'.join(shell._output_capture)
+        # After ECHO OFF, the ECHO Silent command should not be echoed
+        assert 'C:\\>ECHO Silent' not in output
+        assert 'Silent' in output
+        # After ECHO ON, the ECHO Visible command should be echoed
+        assert 'C:\\>ECHO Visible' in output
+        assert 'Visible' in output
 
     # ==================== PROMPT Variable tests ====================
 
