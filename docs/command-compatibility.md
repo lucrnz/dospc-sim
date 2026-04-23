@@ -227,6 +227,7 @@ The SSH terminal session provides a full interactive line editor:
 - **Command completion**: Typing a partial command name and pressing Tab completes it (or shows matching options)
 - **Filename completion**: Tab-completes file and directory names, including paths with directory components
 - **Batch file completion**: `.BAT` and `.CMD` files in the current directory are offered as completions
+- **Shared command source**: SSH tab-completion and HELP command listings use a shared command metadata source, so command catalogs stay in sync
 
 ### Line Editing
 
@@ -236,6 +237,17 @@ The SSH terminal session provides a full interactive line editor:
 - **Backspace** removes the character before the cursor
 - **Ctrl+C** cancels the current line and shows a new prompt
 - **Ctrl+D** disconnects the session
+
+## Standalone DOS Shell Entrypoint
+
+The project now includes a standalone shell entrypoint:
+
+- `uv run dos-shell` starts an interactive DOS shell rooted at the current working directory.
+- `uv run dos-shell file.bat [args...]` executes a batch script and exits.
+- If stdin is piped and no script argument is provided, stdin is interpreted as batch content and the process exits.
+- Explicit stdin tokens are supported: `-` and `STDIN`.
+
+Stdin and file batch execution paths both use the same parser+AST execution runtime.
 
 ## Future Enhancements
 

@@ -385,43 +385,7 @@ class SSHClientHandler(threading.Thread):
         if last_space < 0:
             # Completing a command name
             partial = prefix.upper()
-            commands = [
-                'CALL',
-                'CD',
-                'CHDIR',
-                'CLS',
-                'COPY',
-                'DATE',
-                'DEL',
-                'DIR',
-                'ECHO',
-                'EDIT',
-                'ERASE',
-                'EXIT',
-                'FC',
-                'FIND',
-                'FOR',
-                'GOTO',
-                'HELP',
-                'IF',
-                'MD',
-                'MKDIR',
-                'MORE',
-                'MOVE',
-                'PATH',
-                'PAUSE',
-                'PROMPT',
-                'RD',
-                'REN',
-                'RENAME',
-                'RMDIR',
-                'SET',
-                'SORT',
-                'TIME',
-                'TREE',
-                'TYPE',
-                'VER',
-            ]
+            commands = list(shell.get_available_commands())
             matches = [c for c in commands if c.startswith(partial)]
             # Also check batch files
             try:

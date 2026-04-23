@@ -9,6 +9,7 @@ import pytest
 from dospc_sim.dos_shell import DOSShell
 from dospc_sim.filesystem import UserFilesystem
 from dospc_sim.parser import parse_command
+from dospc_sim.shell_commands import get_shell_command_names
 
 
 class TestDOSShell:
@@ -364,6 +365,20 @@ class TestDOSShell:
 
         assert result == 0
         assert 'directory' in output.lower()
+
+    def test_help_uses_shared_command_names(self, shell):
+        """Test HELP command list is sourced from shared command metadata."""
+        shell._output_capture.clear()
+        result = shell.cmd_help([])
+        output = '\n'.join(shell._output_capture)
+
+        assert result == 0
+        for command in get_shell_command_names():
+            assert command in output
+
+    def test_get_available_commands_matches_shared_metadata(self, shell):
+        """Test shell command listing helper returns shared command names."""
+        assert shell.get_available_commands() == get_shell_command_names()
 
     def test_cmd_exit(self, shell):
         """Test EXIT command."""
