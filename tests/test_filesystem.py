@@ -30,7 +30,7 @@ class TestUserFilesystem:
     def test_initial_state(self, filesystem):
         """Test initial filesystem state."""
         assert filesystem.username == 'testuser'
-        assert filesystem._drive_letter == 'C'
+        assert filesystem.drive_letter == 'C'
         assert filesystem.get_current_path() == 'C:\\'
 
     def test_make_directory(self, filesystem):

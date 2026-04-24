@@ -142,7 +142,7 @@ class FileSystemCommandGroup:
                 ]
             if not wide_format:
                 self._output_line(
-                    f' Volume in drive {self.fs._drive_letter} is DOSPC-SIM'
+                    f' Volume in drive {self.fs.drive_letter} is DOSPC-SIM'
                 )
                 self._output_line(f' Directory of {self.fs.get_current_path()}')
                 self._output_line()
@@ -376,7 +376,7 @@ class FileSystemCommandGroup:
             elif not arg.startswith('/'):
                 path = arg
         try:
-            target = self.fs._resolve_path(path)
+            target = self.fs.resolve_path(path)
             if not target.exists():
                 self._output_line(f'Path not found: {path}')
                 return 1

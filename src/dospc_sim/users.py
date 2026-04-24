@@ -2,9 +2,10 @@
 
 import hashlib
 import json
-import os
 import secrets
+import shutil
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 
 DATA_DIR = Path('data')
@@ -25,38 +26,81 @@ class User:
     is_active: bool = True
 
 
+class UserManagerStorage:
+    """Persistence and filesystem scaffolding for user accounts."""
+
+    def __init__(
+        self,
+        data_dir: Path,
+        users_file: Path | None = None,
+        users_dir: Path | None = None,
+    ):
+        self.data_dir = data_dir
+        self.users_file = (
+            users_file if users_file is not None else data_dir / 'users.json'
+        )
+        self.users_dir = users_dir if users_dir is not None else data_dir / 'users'
+
+    def ensure_directories(self) -> None:
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.users_dir.mkdir(parents=True, exist_ok=True)
+
+    def load_users(self) -> dict[str, User]:
+        if not self.users_file.exists():
+            return {}
+        try:
+            with open(self.users_file, encoding='utf-8') as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, TypeError):
+            return {}
+        return {username: User(**user_data) for username, user_data in data.items()}
+
+    def save_users(self, users: dict[str, User]) -> None:
+        data = {username: asdict(user) for username, user in users.items()}
+        with open(self.users_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2)
+
+    def user_home_dir(self, username: str) -> Path:
+        return self.users_dir / username
+
+    def remove_home_dir(self, home_dir: str) -> None:
+        target = Path(home_dir)
+        if target.exists():
+            shutil.rmtree(target)
+
+    def seed_default_user_home(self, home_dir: Path) -> None:
+        dirs = ['DOCS', 'GAMES', 'TEMP', 'CONFIG']
+        for d in dirs:
+            (home_dir / d).mkdir(parents=True, exist_ok=True)
+
+        welcome_path = home_dir / 'WELCOME.TXT'
+        with open(welcome_path, 'w', encoding='utf-8') as f:
+            f.write("""Welcome to DosPC Sim DOS Environment
+==================================
+
+This is your personal DOS environment.
+Type HELP for available commands.
+
+Your directories:
+- DOCS:   Documents and text files
+- GAMES:  Game files and saves
+- TEMP:   Temporary files
+- CONFIG: Configuration files
+
+Enjoy your retro computing experience!
+""")
+
+
 class UserManager:
     """Manages user accounts and authentication."""
 
     def __init__(self, data_dir: Path = DATA_DIR):
-        self.data_dir = data_dir
-        self.users_file = data_dir / 'users.json'
-        self.users_dir = data_dir / 'users'
+        users_file = USERS_FILE if data_dir == DATA_DIR else data_dir / 'users.json'
+        users_dir = USERS_DIR if data_dir == DATA_DIR else data_dir / 'users'
+        self.storage = UserManagerStorage(data_dir, users_file, users_dir)
         self._users: dict[str, User] = {}
-        self._ensure_directories()
-        self._load_users()
-
-    def _ensure_directories(self) -> None:
-        """Ensure required directories exist."""
-        self.data_dir.mkdir(parents=True, exist_ok=True)
-        self.users_dir.mkdir(parents=True, exist_ok=True)
-
-    def _load_users(self) -> None:
-        """Load users from JSON file."""
-        if self.users_file.exists():
-            try:
-                with open(self.users_file) as f:
-                    data = json.load(f)
-                    for username, user_data in data.items():
-                        self._users[username] = User(**user_data)
-            except (json.JSONDecodeError, TypeError):
-                self._users = {}
-
-    def _save_users(self) -> None:
-        """Save users to JSON file."""
-        data = {username: asdict(user) for username, user in self._users.items()}
-        with open(self.users_file, 'w') as f:
-            json.dump(data, f, indent=2)
+        self.storage.ensure_directories()
+        self._users = self.storage.load_users()
 
     def _hash_password(self, password: str, salt: str | None = None) -> tuple:
         """Hash a password with salt."""
@@ -80,14 +124,10 @@ class UserManager:
         if not username.replace('_', '').isalnum():
             raise ValueError('Username must be alphanumeric (underscores allowed)')
 
-        # Create home directory
-        from datetime import datetime
+        home_dir_path = self.storage.user_home_dir(username)
+        home_dir_path.mkdir(parents=True, exist_ok=True)
 
-        home_dir = str(self.users_dir / username)
-        os.makedirs(home_dir, exist_ok=True)
-
-        # Create default DOS structure
-        self._create_default_structure(home_dir)
+        self.storage.seed_default_user_home(home_dir_path)
 
         # Hash password
         password_hash, salt = self._hash_password(password)
@@ -96,39 +136,14 @@ class UserManager:
             username=username,
             password_hash=password_hash,
             salt=salt,
-            home_dir=home_dir,
+            home_dir=str(home_dir_path),
             created_at=datetime.now().isoformat(),
         )
 
         self._users[username] = user
-        self._save_users()
+        self.storage.save_users(self._users)
 
         return user
-
-    def _create_default_structure(self, home_dir: str) -> None:
-        """Create default DOS directory structure."""
-        # Create common DOS directories
-        dirs = ['DOCS', 'GAMES', 'TEMP', 'CONFIG']
-        for d in dirs:
-            os.makedirs(os.path.join(home_dir, d), exist_ok=True)
-
-        # Create a welcome file
-        welcome_path = os.path.join(home_dir, 'WELCOME.TXT')
-        with open(welcome_path, 'w') as f:
-            f.write("""Welcome to DosPC Sim DOS Environment
-==================================
-
-This is your personal DOS environment.
-Type HELP for available commands.
-
-Your directories:
-- DOCS:   Documents and text files
-- GAMES:  Game files and saves
-- TEMP:   Temporary files
-- CONFIG: Configuration files
-
-Enjoy your retro computing experience!
-""")
 
     def authenticate(self, username: str, password: str) -> User | None:
         """Authenticate a user."""
@@ -141,10 +156,8 @@ Enjoy your retro computing experience!
 
         password_hash, _ = self._hash_password(password, user.salt)
         if password_hash == user.password_hash:
-            from datetime import datetime
-
             user.last_login = datetime.now().isoformat()
-            self._save_users()
+            self.storage.save_users(self._users)
             return user
 
         return None
@@ -165,13 +178,10 @@ Enjoy your retro computing experience!
         user = self._users[username]
 
         if remove_data:
-            import shutil
-
-            if os.path.exists(user.home_dir):
-                shutil.rmtree(user.home_dir)
+            self.storage.remove_home_dir(user.home_dir)
 
         del self._users[username]
-        self._save_users()
+        self.storage.save_users(self._users)
         return True
 
     def change_password(self, username: str, new_password: str) -> bool:
@@ -183,7 +193,7 @@ Enjoy your retro computing experience!
         password_hash, salt = self._hash_password(new_password)
         user.password_hash = password_hash
         user.salt = salt
-        self._save_users()
+        self.storage.save_users(self._users)
         return True
 
     def user_exists(self, username: str) -> bool:

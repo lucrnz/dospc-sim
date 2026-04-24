@@ -28,6 +28,10 @@ class UserFilesystem:
         self._drive_letter = 'C'
         self._ensure_home_exists()
 
+    @property
+    def drive_letter(self) -> str:
+        return self._drive_letter
+
     def _ensure_home_exists(self) -> None:
         """Ensure the home directory exists."""
         self.home_dir.mkdir(parents=True, exist_ok=True)
@@ -79,6 +83,9 @@ class UserFilesystem:
             raise PermissionError('Access denied: path outside home directory') from exc
 
         return target
+
+    def resolve_path(self, path: str) -> Path:
+        return self._resolve_path(path)
 
     def get_current_path(self) -> str:
         """Get current path as DOS-style path."""

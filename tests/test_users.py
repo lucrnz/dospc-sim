@@ -1,6 +1,5 @@
 """Tests for user management system."""
 
-import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -32,7 +31,7 @@ class TestUserManager:
         assert user.username == 'testuser'
         assert user.is_active is True
         assert user.home_dir is not None
-        assert os.path.exists(user.home_dir)
+        assert Path(user.home_dir).exists()
 
     def test_create_user_duplicate(self, user_manager):
         """Test creating a user with duplicate username."""
@@ -108,7 +107,7 @@ class TestUserManager:
 
         result = user_manager.delete_user('testuser')
         assert result is True
-        assert not os.path.exists(home_dir)
+        assert not Path(home_dir).exists()
         assert user_manager.get_user('testuser') is None
 
     def test_delete_user_nonexistent(self, user_manager):
@@ -146,13 +145,14 @@ class TestUserManager:
         user = user_manager.create_user('testuser', 'password123')
 
         # Check default directories
-        assert os.path.exists(os.path.join(user.home_dir, 'DOCS'))
-        assert os.path.exists(os.path.join(user.home_dir, 'GAMES'))
-        assert os.path.exists(os.path.join(user.home_dir, 'TEMP'))
-        assert os.path.exists(os.path.join(user.home_dir, 'CONFIG'))
+        home = Path(user.home_dir)
+        assert (home / 'DOCS').exists()
+        assert (home / 'GAMES').exists()
+        assert (home / 'TEMP').exists()
+        assert (home / 'CONFIG').exists()
 
         # Check welcome file
-        assert os.path.exists(os.path.join(user.home_dir, 'WELCOME.TXT'))
+        assert (home / 'WELCOME.TXT').exists()
 
     def test_persistence(self, temp_dir):
         """Test that users are persisted to disk."""

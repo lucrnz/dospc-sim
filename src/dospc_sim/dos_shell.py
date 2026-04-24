@@ -207,8 +207,8 @@ class DOSShell(DOSShellCommandProvider):
         prompt_str = prompt_str.replace('$T', now.strftime('%H:%M:%S')).replace(
             '$t', now.strftime('%H:%M:%S')
         )
-        prompt_str = prompt_str.replace('$N', self.fs._drive_letter).replace(
-            '$n', self.fs._drive_letter
+        prompt_str = prompt_str.replace('$N', self.fs.drive_letter).replace(
+            '$n', self.fs.drive_letter
         )
         prompt_str = prompt_str.replace('\x00', '$')
         return prompt_str
