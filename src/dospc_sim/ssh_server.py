@@ -91,6 +91,201 @@ class SSHServerInterface(ServerInterface):
         return False  # Disable exec for now, use shell only
 
 
+class SSHInteractiveSession:
+    """Interactive SSH shell session with line editing state."""
+
+    def __init__(self, channel, shell: DOSShell, username: str, tab_complete):
+        self.channel = channel
+        self.shell = shell
+        self.username = username
+        self._tab_complete = tab_complete
+        self.command_buffer = ''
+        self.cursor_pos = 0
+        self.history: list[str] = []
+        self.history_index = 0
+
+    def _refresh_line(self) -> None:
+        prompt = self.shell.get_prompt()
+        self.channel.send(f'\r\x1b[K{prompt}{self.command_buffer}')
+        if self.cursor_pos < len(self.command_buffer):
+            self.channel.send(f'\x1b[{len(self.command_buffer) - self.cursor_pos}D')
+
+    def _show_prompt(self) -> None:
+        self.channel.send(self.shell.get_prompt())
+
+    def _parse_escape_sequence(self, raw: bytes, index: int) -> tuple[str, int]:
+        seq = bytes([raw[index]])
+        index += 1
+        while index < len(raw) and len(seq) < 8:
+            seq += bytes([raw[index]])
+            index += 1
+            if len(seq) == 2 and seq[1] in (0x4F, 0x5B):
+                continue
+            if (len(seq) >= 3 and chr(seq[-1]).isalpha()) or seq[-1] == ord('~'):
+                break
+        else:
+            try:
+                ready, _, _ = select.select([self.channel], [], [], 0.05)
+                if ready:
+                    more = self.channel.recv(16)
+                    raw = raw[:index] + more + raw[index:]
+            except Exception:
+                pass
+        return seq.decode('utf-8', errors='ignore'), index
+
+    def _handle_escape(self, seq_str: str) -> None:
+        if seq_str == '\x1b[A':
+            if self.history and self.history_index > 0:
+                self.history_index -= 1
+                self.command_buffer = self.history[self.history_index]
+                self.cursor_pos = len(self.command_buffer)
+                self._refresh_line()
+            return
+        if seq_str == '\x1b[B':
+            if self.history_index < len(self.history) - 1:
+                self.history_index += 1
+                self.command_buffer = self.history[self.history_index]
+            else:
+                self.history_index = len(self.history)
+                self.command_buffer = ''
+            self.cursor_pos = len(self.command_buffer)
+            self._refresh_line()
+            return
+        if seq_str == '\x1b[C':
+            if self.cursor_pos < len(self.command_buffer):
+                self.cursor_pos += 1
+                self.channel.send('\x1b[C')
+            return
+        if seq_str == '\x1b[D':
+            if self.cursor_pos > 0:
+                self.cursor_pos -= 1
+                self.channel.send('\x1b[D')
+            return
+        if seq_str in ('\x1b[H', '\x1b[1~', '\x1bOH'):
+            if self.cursor_pos > 0:
+                self.channel.send(f'\x1b[{self.cursor_pos}D')
+                self.cursor_pos = 0
+            return
+        if seq_str in ('\x1b[F', '\x1b[4~', '\x1bOF'):
+            if self.cursor_pos < len(self.command_buffer):
+                self.channel.send(f'\x1b[{len(self.command_buffer) - self.cursor_pos}C')
+                self.cursor_pos = len(self.command_buffer)
+            return
+        if seq_str == '\x1b[3~' and self.cursor_pos < len(self.command_buffer):
+            self.command_buffer = (
+                self.command_buffer[: self.cursor_pos]
+                + self.command_buffer[self.cursor_pos + 1 :]
+            )
+            self.channel.send(self.command_buffer[self.cursor_pos:] + ' ')
+            self.channel.send(f'\x1b[{len(self.command_buffer) - self.cursor_pos + 1}D')
+
+    def _handle_enter(self, raw: bytes, index: int) -> int:
+        index += 1
+        if index < len(raw) and raw[index] == 0x0A:
+            index += 1
+        self.channel.send('\r\n')
+        if self.command_buffer.strip():
+            command = self.command_buffer.strip()
+            logger.info(f'User {self.username} executed: {command}')
+            self.shell.execute_command(command)
+            self.history.append(command)
+            self.history_index = len(self.history)
+        self.command_buffer = ''
+        self.cursor_pos = 0
+        if self.shell.running:
+            self._show_prompt()
+        return index
+
+    def _handle_backspace(self) -> None:
+        if self.cursor_pos > 0:
+            self.command_buffer = (
+                self.command_buffer[: self.cursor_pos - 1]
+                + self.command_buffer[self.cursor_pos :]
+            )
+            self.cursor_pos -= 1
+            self.channel.send('\b' + self.command_buffer[self.cursor_pos:] + ' ')
+            move_back = len(self.command_buffer) - self.cursor_pos + 1
+            self.channel.send(f'\x1b[{move_back}D')
+
+    def _handle_interrupt(self) -> None:
+        self.channel.send('^C\r\n')
+        self.command_buffer = ''
+        self.cursor_pos = 0
+        self.history_index = len(self.history)
+        if self.shell.running:
+            self._show_prompt()
+
+    def _handle_tab(self) -> None:
+        completions = self._tab_complete(self.command_buffer, self.cursor_pos)
+        if len(completions) == 1:
+            prefix = self.command_buffer[: self.cursor_pos]
+            last_space = prefix.rfind(' ')
+            before = prefix[: last_space + 1] if last_space >= 0 else ''
+            new_word = completions[0]
+            after = self.command_buffer[self.cursor_pos :]
+            self.command_buffer = before + new_word + after
+            self.cursor_pos = len(before) + len(new_word)
+            self._refresh_line()
+            return
+        if len(completions) > 1:
+            self.channel.send('\r\n')
+            max_len = max(len(c) for c in completions) + 2
+            cols = max(1, 80 // max_len)
+            for idx in range(0, len(completions), cols):
+                row = completions[idx : idx + cols]
+                self.channel.send('  '.join(f'{c:<{max_len}}' for c in row) + '\r\n')
+            self._refresh_line()
+
+    def _insert_printable(self, ch: str) -> None:
+        self.command_buffer = (
+            self.command_buffer[: self.cursor_pos]
+            + ch
+            + self.command_buffer[self.cursor_pos :]
+        )
+        self.cursor_pos += 1
+        self.channel.send(ch + self.command_buffer[self.cursor_pos:])
+        if len(self.command_buffer) - self.cursor_pos > 0:
+            self.channel.send(f'\x1b[{len(self.command_buffer) - self.cursor_pos}D')
+
+    def run(self) -> None:
+        self.history_index = len(self.history)
+        self._show_prompt()
+        while self.shell.running and not self.channel.closed:
+            data = self.channel.recv(1024)
+            if not data:
+                break
+            index = 0
+            while index < len(data):
+                byte = data[index]
+                if byte == 0x1B:
+                    seq, index = self._parse_escape_sequence(data, index)
+                    self._handle_escape(seq)
+                    continue
+                if byte in (0x0D, 0x0A):
+                    index = self._handle_enter(data, index)
+                    continue
+                if byte in (0x7F, 0x08):
+                    index += 1
+                    self._handle_backspace()
+                    continue
+                if byte == 0x03:
+                    index += 1
+                    self._handle_interrupt()
+                    continue
+                if byte == 0x04:
+                    self.shell.running = False
+                    break
+                if byte == 0x09:
+                    index += 1
+                    self._handle_tab()
+                    continue
+                if 0x20 <= byte < 0x7F:
+                    index += 1
+                    self._insert_printable(chr(byte))
+                    continue
+                index += 1
+
+
 class SSHClientHandler(threading.Thread):
     """Handle a single SSH client connection."""
 
@@ -140,7 +335,6 @@ class SSHClientHandler(threading.Thread):
 
     def _setup_shell(self, channel, user: User):
         """Setup DOS shell for the user."""
-        # Create filesystem
         fs = UserFilesystem(user.home_dir, user.username)
 
         def output_callback(text: str):
@@ -150,226 +344,33 @@ class SSHClientHandler(threading.Thread):
             except Exception:
                 pass
 
-        # Create DOS shell
         self.shell = DOSShell(fs, user.username, output_callback)
-
-        input_line_buffer = []
 
         def input_callback():
             try:
-                data = channel.recv(1024)
-                if data:
-                    input_line_buffer.append(
-                        data.decode('utf-8', errors='ignore').strip()
-                    )
+                channel.recv(1024)
             except Exception:
                 pass
 
         self.shell._input_callback = input_callback
-
-        # Set up the editor handler
         self.shell.set_editor_handler(
             lambda filename: self._run_editor(channel, fs, filename)
         )
-
         self.shell.run()
 
-        # Line editor state
-        command_buffer = ''
-        cursor_pos = 0
-        history: list[str] = []
-        history_index = len(history)
+        session = SSHInteractiveSession(
+            channel=channel,
+            shell=self.shell,
+            username=user.username,
+            tab_complete=lambda buffer, cursor: self._tab_complete(
+                fs, self.shell, buffer, cursor
+            ),
+        )
 
-        def refresh_line():
-            nonlocal command_buffer, cursor_pos
-            prompt = self.shell.get_prompt()
-            # Move to start of prompt, clear to end, redraw
-            channel.send(f'\r\x1b[K{prompt}{command_buffer}')
-            if cursor_pos < len(command_buffer):
-                channel.send(f'\x1b[{len(command_buffer) - cursor_pos}D')
-
-        prompt = self.shell.get_prompt()
-        channel.send(prompt)
-
-        while self.shell.running and not channel.closed:
-            try:
-                data = channel.recv(1024)
-                if not data:
-                    break
-
-                i = 0
-                raw = data
-                while i < len(raw):
-                    b = raw[i]
-
-                    if b == 0x1B:  # ESC sequence
-                        seq = bytes([b])
-                        i += 1
-                        while i < len(raw) and len(seq) < 8:
-                            seq += bytes([raw[i]])
-                            i += 1
-                            # Check if this is a complete ANSI sequence
-                            if len(seq) == 2 and seq[1] in (0x4F, 0x5B):
-                                continue
-                            if (len(seq) >= 3 and chr(seq[-1]).isalpha()) or seq[
-                                -1
-                            ] == ord('~'):
-                                break
-                        else:
-                            # Need more data - wait briefly
-                            try:
-                                ready, _, _ = select.select([channel], [], [], 0.05)
-                                if ready:
-                                    more = channel.recv(16)
-                                    raw = raw[:i] + more + raw[i:]
-                                    continue
-                            except Exception:
-                                pass
-
-                        # Parse the escape sequence
-                        seq_str = seq.decode('utf-8', errors='ignore')
-
-                        if seq_str == '\x1b[A':  # Up arrow
-                            if history and history_index > 0:
-                                history_index -= 1
-                                command_buffer = history[history_index]
-                                cursor_pos = len(command_buffer)
-                                refresh_line()
-                        elif seq_str == '\x1b[B':  # Down arrow
-                            if history_index < len(history) - 1:
-                                history_index += 1
-                                command_buffer = history[history_index]
-                            else:
-                                history_index = len(history)
-                                command_buffer = ''
-                            cursor_pos = len(command_buffer)
-                            refresh_line()
-                        elif seq_str == '\x1b[C':  # Right arrow
-                            if cursor_pos < len(command_buffer):
-                                cursor_pos += 1
-                                channel.send('\x1b[C')
-                        elif seq_str == '\x1b[D':  # Left arrow
-                            if cursor_pos > 0:
-                                cursor_pos -= 1
-                                channel.send('\x1b[D')
-                        elif seq_str in ('\x1b[H', '\x1b[1~', '\x1bOH'):  # Home
-                            if cursor_pos > 0:
-                                channel.send(f'\x1b[{cursor_pos}D')
-                                cursor_pos = 0
-                        elif seq_str in ('\x1b[F', '\x1b[4~', '\x1bOF'):  # End
-                            if cursor_pos < len(command_buffer):
-                                channel.send(
-                                    f'\x1b[{len(command_buffer) - cursor_pos}C'
-                                )
-                                cursor_pos = len(command_buffer)
-                        elif seq_str in ('\x1b[3~',) and cursor_pos < len(
-                            command_buffer
-                        ):
-                            command_buffer = (
-                                command_buffer[:cursor_pos]
-                                + command_buffer[cursor_pos + 1 :]
-                            )
-                            channel.send(command_buffer[cursor_pos:] + ' ')
-                            channel.send(
-                                f'\x1b[{len(command_buffer) - cursor_pos + 1}D'
-                            )
-                        continue
-
-                    if b == 0x0D or b == 0x0A:  # Enter
-                        i += 1
-                        # Skip LF after CR
-                        if i < len(raw) and raw[i] == 0x0A:
-                            i += 1
-                        channel.send('\r\n')
-                        if command_buffer.strip():
-                            cmd = command_buffer.strip()
-                            logger.info(f'User {user.username} executed: {cmd}')
-                            self.shell.execute_command(command_buffer.strip())
-                            history.append(command_buffer.strip())
-                            history_index = len(history)
-                        command_buffer = ''
-                        cursor_pos = 0
-                        if self.shell.running:
-                            prompt = self.shell.get_prompt()
-                            channel.send(prompt)
-                        continue
-
-                    if b == 0x7F or b == 0x08:  # Backspace
-                        i += 1
-                        if cursor_pos > 0:
-                            command_buffer = (
-                                command_buffer[: cursor_pos - 1]
-                                + command_buffer[cursor_pos:]
-                            )
-                            cursor_pos -= 1
-                            channel.send('\b' + command_buffer[cursor_pos:] + ' ')
-                            move_back = len(command_buffer) - cursor_pos + 1
-                            channel.send(f'\x1b[{move_back}D')
-                        continue
-
-                    if b == 0x03:  # Ctrl+C
-                        i += 1
-                        channel.send('^C\r\n')
-                        command_buffer = ''
-                        cursor_pos = 0
-                        history_index = len(history)
-                        if self.shell.running:
-                            prompt = self.shell.get_prompt()
-                            channel.send(prompt)
-                        continue
-
-                    if b == 0x04:  # Ctrl+D
-                        self.shell.running = False
-                        break
-
-                    if b == 0x09:  # Tab - autocomplete
-                        i += 1
-                        completions = self._tab_complete(
-                            fs, self.shell, command_buffer, cursor_pos
-                        )
-                        if len(completions) == 1:
-                            # Replace the last word with the completion
-                            prefix = command_buffer[:cursor_pos]
-                            last_space = prefix.rfind(' ')
-                            before = prefix[: last_space + 1] if last_space >= 0 else ''
-                            new_word = completions[0]
-                            after = command_buffer[cursor_pos:]
-                            command_buffer = before + new_word + after
-                            cursor_pos = len(before) + len(new_word)
-                            refresh_line()
-                        elif len(completions) > 1:
-                            channel.send('\r\n')
-                            # Display completions in columns
-                            max_len = max(len(c) for c in completions) + 2
-                            cols = max(1, 80 // max_len)
-                            for j in range(0, len(completions), cols):
-                                row = completions[j : j + cols]
-                                channel.send(
-                                    '  '.join(f'{c:<{max_len}}' for c in row) + '\r\n'
-                                )
-                            refresh_line()
-                        continue
-
-                    if b >= 0x20 and b < 0x7F:  # Printable char
-                        ch = chr(b)
-                        i += 1
-                        command_buffer = (
-                            command_buffer[:cursor_pos]
-                            + ch
-                            + command_buffer[cursor_pos:]
-                        )
-                        cursor_pos += 1
-                        # Echo the char and redraw after cursor
-                        channel.send(ch + command_buffer[cursor_pos:])
-                        if len(command_buffer) - cursor_pos > 0:
-                            channel.send(f'\x1b[{len(command_buffer) - cursor_pos}D')
-                        continue
-
-                    i += 1  # skip unknown bytes
-
-            except Exception as e:
-                logger.error(f'Error in shell for {user.username}: {e}')
-                break
+        try:
+            session.run()
+        except Exception as e:
+            logger.error(f'Error in shell for {user.username}: {e}')
 
         logger.info(f'Session ended for user {user.username} from {self.address[0]}')
         channel.send('\r\nGoodbye!\r\n')

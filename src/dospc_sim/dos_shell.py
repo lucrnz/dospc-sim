@@ -34,6 +34,119 @@ class _GotoSignal(Exception):
         self.label = label
 
 
+class _RedirectionExecutor:
+    """Handle command execution with DOS-style redirection semantics."""
+
+    def __init__(self, shell: 'DOSShell'):
+        self.shell = shell
+
+    def execute(self, parsed: CommandLine) -> int:
+        ast = parsed.command
+        if isinstance(ast, Label):
+            return 0
+
+        redirecting = parsed.stdout_redirect or parsed.append_redirect
+        captured: list[str] = []
+        original_callback = self.shell.output_callback
+        if redirecting:
+            self.shell.output_callback = lambda text, buf=captured: buf.append(text)
+
+        if parsed.stdin_redirect:
+            try:
+                self.shell._piped_input = self.shell.fs.read_file(parsed.stdin_redirect)
+            except (FileNotFoundError, IsADirectoryError):
+                self.shell._output_line('The system cannot find the file specified.')
+                if redirecting:
+                    self.shell.output_callback = original_callback
+                self.shell.last_errorlevel = 1
+                self.shell._piped_input = None
+                return 1
+
+        self.shell.last_errorlevel = self.shell._execute_ast(ast)
+
+        if redirecting:
+            self.shell.output_callback = original_callback
+            output_text = '\n'.join(captured)
+            if parsed.append_redirect:
+                try:
+                    existing = self.shell.fs.read_file(parsed.append_redirect)
+                    output_text = existing + '\n' + output_text
+                except (FileNotFoundError, IsADirectoryError):
+                    pass
+                self.shell.fs.write_file(parsed.append_redirect, output_text)
+            elif parsed.stdout_redirect:
+                self.shell.fs.write_file(parsed.stdout_redirect, output_text)
+
+        self.shell._piped_input = None
+        return self.shell.last_errorlevel
+
+
+class _BatchExecutor:
+    """Execute batch scripts using parsed AST commands and goto labels."""
+
+    def __init__(self, shell: 'DOSShell'):
+        self.shell = shell
+
+    def execute(self, content: str, batch_name: str, args: list[str] | None) -> int:
+        try:
+            params = {0: batch_name}
+            for i, arg in enumerate((args or [])[:9], 1):
+                params[i] = arg
+            for i in range(10):
+                placeholder = f'%{i}'
+                if placeholder in content and i in params:
+                    content = content.replace(placeholder, params[i])
+
+            raw_lines = content.splitlines()
+            labels: dict[str, int] = {}
+            line_index: list[str | None] = []
+            for raw in raw_lines:
+                stripped = raw.strip()
+                if (
+                    not stripped
+                    or stripped.startswith('::')
+                    or stripped.upper().startswith('REM ')
+                ):
+                    line_index.append(None)
+                else:
+                    line_index.append(stripped)
+                    label_match = re.match(r'^:([A-Za-z_][A-Za-z0-9_]*)\s*$', stripped)
+                    if label_match:
+                        labels[label_match.group(1).upper()] = len(line_index) - 1
+
+            pc = 0
+            while pc < len(line_index):
+                raw_line = line_index[pc]
+                pc += 1
+
+                if raw_line is None:
+                    continue
+
+                expanded = self.shell.expand_variables(raw_line)
+                parsed = parse_command(expanded)
+                if parsed is None:
+                    continue
+
+                if self.shell._echo_on and not isinstance(parsed.command, Label):
+                    self.shell._output_line(f'{self.shell.get_prompt()}{expanded}')
+
+                try:
+                    self.shell._execute_parsed(parsed)
+                except _GotoSignal as g:
+                    target = g.label.upper()
+                    if target in labels:
+                        pc = labels[target] + 1
+                    else:
+                        self.shell._output_line(f'Label not found: {target}')
+
+            return self.shell.last_errorlevel
+        except _GotoSignal:
+            return self.shell.last_errorlevel
+        except Exception as e:
+            self.shell._output_line(f'Batch error: {e!s}')
+            return 1
+
+
 class DOSShell(DOSShellCommandProvider):
     """Simulates a DOS environment for SSH clients."""
 
@@ -59,6 +172,8 @@ class DOSShell(DOSShellCommandProvider):
         self._piped_input: str | None = None
         self._input_callback: Callable[[], str] | None = None
         self._echo_on = True
+        self._redirection_executor = _RedirectionExecutor(self)
+        self._batch_executor = _BatchExecutor(self)
 
     def _output(self, text: str = '') -> None:
         self.output_callback(text)
@@ -119,46 +234,7 @@ class DOSShell(DOSShellCommandProvider):
 
     def _execute_parsed(self, parsed: CommandLine) -> int:
         """Execute a parsed CommandLine AST node."""
-        ast = parsed.command
-
-        if isinstance(ast, Label):
-            return 0
-
-        # Handle I/O redirection: capture output
-        redirecting = parsed.stdout_redirect or parsed.append_redirect
-        if redirecting:
-            captured = []
-            original_callback = self.output_callback
-            self.output_callback = lambda text, buf=captured: buf.append(text)
-
-        if parsed.stdin_redirect:
-            try:
-                self._piped_input = self.fs.read_file(parsed.stdin_redirect)
-            except (FileNotFoundError, IsADirectoryError):
-                self._output_line('The system cannot find the file specified.')
-                if redirecting:
-                    self.output_callback = original_callback
-                self.last_errorlevel = 1
-                self._piped_input = None
-                return 1
-
-        self.last_errorlevel = self._execute_ast(ast)
-
-        if redirecting:
-            self.output_callback = original_callback
-            output_text = '\n'.join(captured)
-            if parsed.append_redirect:
-                try:
-                    existing = self.fs.read_file(parsed.append_redirect)
-                    output_text = existing + '\n' + output_text
-                except (FileNotFoundError, IsADirectoryError):
-                    pass
-                self.fs.write_file(parsed.append_redirect, output_text)
-            elif parsed.stdout_redirect:
-                self.fs.write_file(parsed.stdout_redirect, output_text)
-
-        self._piped_input = None
-        return self.last_errorlevel
+        return self._redirection_executor.execute(parsed)
 
     def _execute_ast(self, ast) -> int:
         """Dispatch execution based on AST node type."""
@@ -375,64 +451,7 @@ class DOSShell(DOSShellCommandProvider):
         self, content: str, batch_name: str, args: list[str] | None
     ) -> int:
         """Execute batch content with optional positional arguments."""
-        try:
-            params = {0: batch_name}
-            for i, arg in enumerate((args or [])[:9], 1):
-                params[i] = arg
-            for i in range(10):
-                placeholder = f'%{i}'
-                if placeholder in content and i in params:
-                    content = content.replace(placeholder, params[i])
-
-            raw_lines = content.splitlines()
-
-            labels: dict[str, int] = {}
-            line_index: list[str | None] = []
-            for raw in raw_lines:
-                stripped = raw.strip()
-                if (
-                    not stripped
-                    or stripped.startswith('::')
-                    or stripped.upper().startswith('REM ')
-                ):
-                    line_index.append(None)
-                else:
-                    line_index.append(stripped)
-                    label_match = re.match(r'^:([A-Za-z_][A-Za-z0-9_]*)\s*$', stripped)
-                    if label_match:
-                        labels[label_match.group(1).upper()] = len(line_index) - 1
-
-            pc = 0
-            while pc < len(line_index):
-                raw_line = line_index[pc]
-                pc += 1
-
-                if raw_line is None:
-                    continue
-
-                expanded = self.expand_variables(raw_line)
-                parsed = parse_command(expanded)
-                if parsed is None:
-                    continue
-
-                if self._echo_on and not isinstance(parsed.command, Label):
-                    self._output_line(f'{self.get_prompt()}{expanded}')
-
-                try:
-                    self._execute_parsed(parsed)
-                except _GotoSignal as g:
-                    target = g.label.upper()
-                    if target in labels:
-                        pc = labels[target] + 1
-                    else:
-                        self._output_line(f'Label not found: {target}')
-
-            return self.last_errorlevel
-        except _GotoSignal:
-            return self.last_errorlevel
-        except Exception as e:
-            self._output_line(f'Batch error: {e!s}')
-            return 1
+        return self._batch_executor.execute(content, batch_name, args)
 
     @staticmethod
     def get_available_commands() -> tuple[str, ...]:

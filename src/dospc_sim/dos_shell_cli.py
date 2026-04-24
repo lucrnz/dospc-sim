@@ -65,8 +65,6 @@ def _write_fixture_files(shell: DOSShell) -> None:
     shell.fs.write_file('docs/beta.txt', 'beta copy\n')
 
 
-
-
 def build_parser() -> argparse.ArgumentParser:
     """Build argument parser for standalone DOS shell mode."""
     parser = argparse.ArgumentParser(
@@ -209,9 +207,19 @@ def _run_benchmark(iterations: int) -> int:
         add_benchmark('DIR wildcard', _noop, run('DIR *.txt'), _noop, _noop)
         add_benchmark('CD', _noop, run('CD \\'), _noop, _noop)
         add_benchmark('MD', remove_benchdir, run('MD benchdir'), remove_benchdir, _noop)
-        add_benchmark('RD', ensure_benchdir, run('RD benchdir'), run('MD benchdir'), _noop)
-        add_benchmark('COPY', ensure_alpha, run('COPY alpha.txt copy.txt'), run('DEL copy.txt'), _noop)
-        add_benchmark('DEL', ensure_copy_file, run('DEL copy.txt'), ensure_copy_file, _noop)
+        add_benchmark(
+            'RD', ensure_benchdir, run('RD benchdir'), run('MD benchdir'), _noop
+        )
+        add_benchmark(
+            'COPY',
+            ensure_alpha,
+            run('COPY alpha.txt copy.txt'),
+            run('DEL copy.txt'),
+            _noop,
+        )
+        add_benchmark(
+            'DEL', ensure_copy_file, run('DEL copy.txt'), ensure_copy_file, _noop
+        )
         add_benchmark(
             'REN',
             ensure_alpha,
@@ -244,8 +252,20 @@ def _run_benchmark(iterations: int) -> int:
 
         pipe_cmd = 'TYPE beta.txt | FIND line | SORT'
         add_benchmark('Pipes', _noop, run(pipe_cmd), _noop, _noop)
-        add_benchmark('Redirect >', remove_outfile, run('ECHO hi > out.txt'), remove_outfile, _noop)
-        add_benchmark('Redirect >>', remove_outfile, run('ECHO hi >> out.txt'), remove_outfile, _noop)
+        add_benchmark(
+            'Redirect >',
+            remove_outfile,
+            run('ECHO hi > out.txt'),
+            remove_outfile,
+            _noop,
+        )
+        add_benchmark(
+            'Redirect >>',
+            remove_outfile,
+            run('ECHO hi >> out.txt'),
+            remove_outfile,
+            _noop,
+        )
         add_benchmark('Redirect <', _noop, run('FIND line < beta.txt'), _noop, _noop)
 
         batch_script = '\n'.join(
@@ -275,14 +295,13 @@ def _run_benchmark(iterations: int) -> int:
         )
 
         _reset_output(shell)
-        header = (
-            f'{"Benchmark":<22} {"Iterations":>10} {"Seconds":>12} {"Ops/Sec":>12}'
-        )
+        header = f'{"Benchmark":<22} {"Iterations":>10} {"Seconds":>12} {"Ops/Sec":>12}'
         shell._output_line(header)
         shell._output_line('-' * len(header))
         for result in benchmarks:
             shell._output_line(
-                f'{result.name:<22} {result.iterations:>10} {result.seconds:>12.4f} {result.ops_per_sec:>12.2f}'
+                f'{result.name:<22} {result.iterations:>10} '
+                f'{result.seconds:>12.4f} {result.ops_per_sec:>12.2f}'
             )
 
         for line in _output_lines(shell):
