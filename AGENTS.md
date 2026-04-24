@@ -12,6 +12,10 @@ Follow conventional commits
 
 All DOS/BATCH interpreter features should go through the LARK grammar + AST.
 
+## Benchmarks
+
+When adding a new DOS/BATCH interpreter feature, add it to the benchmark suite.
+
 ## Commands
 
 Run tests: `uv run pytest`
