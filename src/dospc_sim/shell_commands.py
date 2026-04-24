@@ -105,8 +105,8 @@ def get_shell_command_help(command: str) -> str:
     )
 
 
-class DOSShellCommandProvider:
-    """Command implementations for the DOS shell runtime."""
+class FileSystemCommandGroup:
+    """Filesystem-oriented DOS commands."""
 
     def cmd_dir(self, args: list[str]) -> int:
         path = '.'
@@ -366,6 +366,59 @@ class DOSShellCommandProvider:
             self._output_line('The system cannot find the file specified.')
             return 1
 
+    def cmd_tree(self, args: list[str]) -> int:
+        path = '.'
+        show_files = False
+        for arg in args:
+            upper = arg.upper()
+            if upper == '/F':
+                show_files = True
+            elif not arg.startswith('/'):
+                path = arg
+        try:
+            target = self.fs._resolve_path(path)
+            if not target.exists():
+                self._output_line(f'Path not found: {path}')
+                return 1
+            if not target.is_dir():
+                self._output_line(f'Not a directory: {path}')
+                return 1
+            rel = self.fs.get_current_path()
+            if path != '.':
+                rel = path
+            self._output_line(f'Folder PATH listing for {rel}')
+            self._output_line('Volume serial number is DosPC-Sim')
+            self._output_line('.')
+            lines = []
+            self._build_tree(target, target, '', show_files, lines)
+            for line in lines:
+                self._output_line(line)
+            return 0
+        except PermissionError:
+            self._output_line('Access denied')
+            return 1
+
+    def _build_tree(self, root, current, prefix, show_files, lines):
+        entries = sorted(
+            current.iterdir(), key=lambda e: (not e.is_dir(), e.name.upper())
+        )
+        dirs = [e for e in entries if e.is_dir()]
+        files = [e for e in entries if e.is_file()]
+        all_items = dirs[:]
+        if show_files:
+            all_items.extend(files)
+        for i, item in enumerate(all_items):
+            is_last = i == len(all_items) - 1
+            connector = '└── ' if is_last else '├── '
+            lines.append(f'{prefix}{connector}{item.name}')
+            if item.is_dir():
+                extension = '    ' if is_last else '│   '
+                self._build_tree(root, item, prefix + extension, show_files, lines)
+
+
+class ShellCoreCommandGroup:
+    """Shell state and informational DOS commands."""
+
     def cmd_cls(self, args: list[str]) -> int:
         self._output('\x1b[2J\x1b[H')
         return 0
@@ -456,54 +509,9 @@ class DOSShellCommandProvider:
         )
         return 0
 
-    def cmd_tree(self, args: list[str]) -> int:
-        path = '.'
-        show_files = False
-        for arg in args:
-            upper = arg.upper()
-            if upper == '/F':
-                show_files = True
-            elif not arg.startswith('/'):
-                path = arg
-        try:
-            target = self.fs._resolve_path(path)
-            if not target.exists():
-                self._output_line(f'Path not found: {path}')
-                return 1
-            if not target.is_dir():
-                self._output_line(f'Not a directory: {path}')
-                return 1
-            rel = self.fs.get_current_path()
-            if path != '.':
-                rel = path
-            self._output_line(f'Folder PATH listing for {rel}')
-            self._output_line('Volume serial number is DosPC-Sim')
-            self._output_line('.')
-            lines = []
-            self._build_tree(target, target, '', show_files, lines)
-            for line in lines:
-                self._output_line(line)
-            return 0
-        except PermissionError:
-            self._output_line('Access denied')
-            return 1
 
-    def _build_tree(self, root, current, prefix, show_files, lines):
-        entries = sorted(
-            current.iterdir(), key=lambda e: (not e.is_dir(), e.name.upper())
-        )
-        dirs = [e for e in entries if e.is_dir()]
-        files = [e for e in entries if e.is_file()]
-        all_items = dirs[:]
-        if show_files:
-            all_items.extend(files)
-        for i, item in enumerate(all_items):
-            is_last = i == len(all_items) - 1
-            connector = '└── ' if is_last else '├── '
-            lines.append(f'{prefix}{connector}{item.name}')
-            if item.is_dir():
-                extension = '    ' if is_last else '│   '
-                self._build_tree(root, item, prefix + extension, show_files, lines)
+class TextProcessingCommandGroup:
+    """Text-processing and editor DOS commands."""
 
     def cmd_find(self, args: list[str]) -> int:
         if not args:
@@ -718,3 +726,11 @@ class DOSShellCommandProvider:
         self._output_line('EDIT requires an interactive terminal session.')
         self._output_line('Usage: EDIT [filename]')
         return 1
+
+
+class DOSShellCommandProvider(
+    FileSystemCommandGroup,
+    ShellCoreCommandGroup,
+    TextProcessingCommandGroup,
+):
+    """Command implementations for the DOS shell runtime."""

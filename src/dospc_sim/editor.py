@@ -7,6 +7,85 @@ Supports basic file opening, editing, and saving functionality.
 from dospc_sim.filesystem import UserFilesystem
 
 
+class EditorBuffer:
+    """Text buffer and cursor state for editor operations."""
+
+    def __init__(self) -> None:
+        self.lines: list[str] = []
+        self.filename: str | None = None
+        self.modified = False
+        self.cursor_row = 0
+        self.cursor_col = 0
+        self.status_message = ''
+
+    def initialize_new(self, filename: str | None = None, status: str = '') -> None:
+        self.lines = ['']
+        self.filename = filename
+        self.modified = False
+        self.cursor_row = 0
+        self.cursor_col = 0
+        self.status_message = status
+
+
+class EditorRenderer:
+    """Terminal rendering concerns for the text editor."""
+
+    def __init__(self, output_callback) -> None:
+        self.output = output_callback
+        self._alternate_screen = False
+
+    def _out(self, text: str) -> None:
+        text = text.replace('\r\n', '\n').replace('\n', '\r\n')
+        self.output(text)
+
+    def init_terminal(self) -> None:
+        self._out('\x1b[?1049h')
+        self._alternate_screen = True
+        self._out('\x1b[2J\x1b[H')
+
+    def reset_terminal(self) -> None:
+        self._out('\x1b[?25h')
+        if self._alternate_screen:
+            self._out('\x1b[?1049l')
+            self._alternate_screen = False
+        self._out('\r\n')
+
+    def draw_prompt(self, prompt: str) -> None:
+        self._out(f'\x1b[{24};1H\x1b[K{prompt}')
+
+    def draw_screen(self, buffer: EditorBuffer) -> None:
+        screen_lines = []
+        screen_lines.append('\x1b[2J\x1b[H')
+        title = 'DOSPC SIM EDIT'
+        filename_display = buffer.filename if buffer.filename else 'Untitled'
+        modified_flag = ' *' if buffer.modified else ''
+        title_bar = f' {title} - {filename_display}{modified_flag}'
+        title_bar = title_bar.ljust(79)[:79]
+        screen_lines.append(f'\x1b[7m{title_bar}\x1b[0m')
+
+        visible_lines = 21
+        start_row = max(0, buffer.cursor_row - 10)
+        for i in range(visible_lines):
+            row = start_row + i
+            if row < len(buffer.lines):
+                line = buffer.lines[row]
+                line_num = f'{row + 1:4d} '
+                display_line = line[:73]
+                screen_lines.append(f'{line_num}{display_line}')
+            else:
+                screen_lines.append('~')
+
+        status = f' {buffer.status_message}'
+        status = status.ljust(79)[:79]
+        screen_lines.append(f'\x1b[7m{status}\x1b[0m')
+
+        self._out('\n'.join(screen_lines))
+        cursor_screen_row = buffer.cursor_row - start_row + 3
+        cursor_screen_col = buffer.cursor_col + 6
+        self._out(f'\x1b[{cursor_screen_row};{cursor_screen_col}H')
+        self._out('\x1b[?25h')
+
+
 class TextEditor:
     """Simple DOS-style text editor for SSH sessions."""
 
@@ -14,39 +93,69 @@ class TextEditor:
         self.fs = filesystem
         self.output = output_callback
         self.get_input = input_callback
-        self.lines: list[str] = []
-        self.filename: str | None = None
-        self.modified = False
-        self.cursor_row = 0
-        self.cursor_col = 0
+        self.buffer = EditorBuffer()
+        self.renderer = EditorRenderer(output_callback)
         self.running = False
-        self.status_message = ''
-        self._alternate_screen = False
+
+    @property
+    def lines(self) -> list[str]:
+        return self.buffer.lines
+
+    @lines.setter
+    def lines(self, value: list[str]) -> None:
+        self.buffer.lines = value
+
+    @property
+    def filename(self) -> str | None:
+        return self.buffer.filename
+
+    @filename.setter
+    def filename(self, value: str | None) -> None:
+        self.buffer.filename = value
+
+    @property
+    def modified(self) -> bool:
+        return self.buffer.modified
+
+    @modified.setter
+    def modified(self, value: bool) -> None:
+        self.buffer.modified = value
+
+    @property
+    def cursor_row(self) -> int:
+        return self.buffer.cursor_row
+
+    @cursor_row.setter
+    def cursor_row(self, value: int) -> None:
+        self.buffer.cursor_row = value
+
+    @property
+    def cursor_col(self) -> int:
+        return self.buffer.cursor_col
+
+    @cursor_col.setter
+    def cursor_col(self, value: int) -> None:
+        self.buffer.cursor_col = value
+
+    @property
+    def status_message(self) -> str:
+        return self.buffer.status_message
+
+    @status_message.setter
+    def status_message(self, value: str) -> None:
+        self.buffer.status_message = value
 
     def _out(self, text: str) -> None:
         """Output text with proper CRLF line endings for terminal compatibility."""
-        # Convert lone \n to \r\n for proper terminal rendering
-        text = text.replace('\r\n', '\n').replace('\n', '\r\n')
-        self.output(text)
+        self.renderer._out(text)
 
     def _init_terminal(self) -> None:
         """Initialize terminal for full-screen editing."""
-        # Switch to alternate screen buffer
-        self._out('\x1b[?1049h')
-        self._alternate_screen = True
-        # Clear screen and move to home
-        self._out('\x1b[2J\x1b[H')
+        self.renderer.init_terminal()
 
     def _reset_terminal(self) -> None:
         """Reset terminal to normal state."""
-        # Show cursor
-        self._out('\x1b[?25h')
-        # Switch back to main screen buffer
-        if self._alternate_screen:
-            self._out('\x1b[?1049l')
-            self._alternate_screen = False
-        # Ensure we start on a fresh line
-        self._out('\r\n')
+        self.renderer.reset_terminal()
 
     def run(self, filename: str | None = None) -> int:
         """Run the editor, optionally opening a file."""
@@ -59,9 +168,7 @@ class TextEditor:
             if filename:
                 self.open_file(filename)
             else:
-                self.lines = ['']
-                self.filename = None
-                self.modified = False
+                self.buffer.initialize_new()
 
             self._draw_screen()
 
@@ -97,17 +204,11 @@ class TextEditor:
                 return True
             else:
                 # New file
-                self.lines = ['']
-                self.filename = filename
-                self.modified = False
-                self.cursor_row = 0
-                self.cursor_col = 0
-                self.status_message = f'New file: {filename}'
+                self.buffer.initialize_new(filename, f'New file: {filename}')
                 return True
         except Exception as e:
             self.status_message = f'Error: {e!s}'
-            self.lines = ['']
-            self.filename = filename
+            self.buffer.initialize_new(filename, self.status_message)
             return False
 
     def save_file(self, filename: str | None = None) -> bool:
@@ -345,7 +446,7 @@ class TextEditor:
 
     def _draw_prompt(self, prompt: str) -> None:
         """Draw a prompt at the bottom of screen."""
-        self._out(f'\x1b[{24};1H\x1b[K{prompt}')
+        self.renderer.draw_prompt(prompt)
 
     def _show_help(self) -> None:
         """Show help screen."""
@@ -382,56 +483,7 @@ class TextEditor:
 
     def _draw_screen(self) -> None:
         """Redraw the entire screen."""
-        # Build screen buffer for atomic output
-        screen_lines = []
-
-        # Clear screen and move to home position
-        # This overwrites any local echo artifacts from the PTY
-        screen_lines.append('\x1b[2J\x1b[H')
-
-        # Draw title bar with inverse video
-        title = 'DOSPC SIM EDIT'
-        filename_display = self.filename if self.filename else 'Untitled'
-        modified_flag = ' *' if self.modified else ''
-        title_bar = f' {title} - {filename_display}{modified_flag}'
-        title_bar = title_bar.ljust(79)[:79]
-        screen_lines.append(f'\x1b[7m{title_bar}\x1b[0m')
-
-        # Draw text area (lines 2-22, 21 lines total)
-        visible_lines = 21
-        start_row = max(0, self.cursor_row - 10)
-
-        for i in range(visible_lines):
-            row = start_row + i
-            if row < len(self.lines):
-                line = self.lines[row]
-                # Show line number and content
-                line_num = f'{row + 1:4d} '
-                display_line = line[:73]
-                screen_lines.append(f'{line_num}{display_line}')
-            else:
-                screen_lines.append('~')
-
-        # Draw status bar with inverse video
-        status = f' {self.status_message}'
-        status = status.ljust(79)[:79]
-        screen_lines.append(f'\x1b[7m{status}\x1b[0m')
-
-        # Join all lines and output atomically
-        screen_content = '\n'.join(screen_lines)
-        self._out(screen_content)
-
-        # Position cursor (separate to ensure it's after screen content)
-        # Screen layout: row 1 = (empty after clear), row 2 = title bar,
-        # rows 3-23 = text area, row 24 = status bar
-        # The clear code + newline puts title on row 2, text starts on row 3
-        cursor_screen_row = (
-            self.cursor_row - start_row + 3
-        )  # +3 for title bar offset (1-indexed)
-        cursor_screen_col = self.cursor_col + 6  # +6 for line number prefix (1-indexed)
-        self._out(f'\x1b[{cursor_screen_row};{cursor_screen_col}H')
-        # Ensure cursor is visible
-        self._out('\x1b[?25h')
+        self.renderer.draw_screen(self.buffer)
 
 
 def run_editor(
