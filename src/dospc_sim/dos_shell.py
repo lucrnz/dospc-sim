@@ -200,6 +200,14 @@ class DOSShell(DOSShellCommandProvider):
         for attr in dir(self):
             if attr.startswith('cmd_'):
                 self._cmd_dispatch[attr[4:].upper()] = getattr(self, attr)
+        self._ast_dispatch: dict[type, Callable] = {
+            EchoCommand: self._execute_echo,
+            SimpleCommand: self._execute_simple,
+            PipeCommand: self._execute_pipe,
+            CallCommand: self._execute_call,
+            IfCommand: self._execute_if,
+            ForCommand: self._execute_for,
+        }
 
     def _output(self, text: str = '') -> None:
         self.output_callback(text)
@@ -276,24 +284,15 @@ class DOSShell(DOSShellCommandProvider):
 
     def _execute_ast(self, ast) -> int:
         """Dispatch execution based on AST node type."""
-        if isinstance(ast, EchoCommand):
-            return self._execute_echo(ast)
-        if isinstance(ast, SimpleCommand):
-            return self._execute_simple(ast)
-        if isinstance(ast, PipeCommand):
-            return self._execute_pipe(ast)
         if isinstance(ast, GotoCommand):
             raise _GotoSignal(ast.label)
-        if isinstance(ast, CallCommand):
-            return self._execute_call(ast)
         if isinstance(ast, PauseCommand):
             return self._execute_pause()
-        if isinstance(ast, IfCommand):
-            return self._execute_if(ast)
-        if isinstance(ast, ForCommand):
-            return self._execute_for(ast)
         if isinstance(ast, Label):
             return 0
+        handler = self._ast_dispatch.get(type(ast))
+        if handler is not None:
+            return handler(ast)
         return 0
 
     def _execute_echo(self, echo: EchoCommand) -> int:

@@ -337,10 +337,12 @@ class SSHClientHandler(threading.Thread):
         """Setup DOS shell for the user."""
         fs = UserFilesystem(user.home_dir, user.username)
 
+        _crlf = b'\r\n'
+
         def output_callback(text: str):
             """Send output to the client."""
             try:
-                channel.send(text + '\r\n')
+                channel.sendall(text.encode('utf-8') + _crlf)
             except Exception:
                 pass
 

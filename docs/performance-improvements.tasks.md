@@ -193,7 +193,9 @@ Status: Done
 **Files:** `src/dospc_sim/dos_shell.py`
 **Estimated impact:** Every command execution; small constant-factor improvement.
 
-Status: Todo
+Benchmark data: Pre: ECHO 103520 ops/s, Batch 2759 ops/s → Post: ECHO 99984 ops/s, Batch 2735 ops/s. Noise (isinstance chain was already fast for the common case).
+
+Status: Done
 
 ---
 
@@ -204,7 +206,9 @@ The SSH `output_callback` lambda does `text + '\r\n'` on every output line, crea
 **Files:** `src/dospc_sim/ssh_server.py`
 **Estimated impact:** DIR, TREE, TYPE, FIND, batch ECHO — reduces SSH round-trips and allocations.
 
-Status: Todo
+Benchmark data: Not benchmarked (SSH callback not exercised by benchmark suite). Changed to use bytes concatenation with pre-allocated CRLF bytes and channel.sendall for reliable delivery.
+
+Status: Done
 
 ---
 
