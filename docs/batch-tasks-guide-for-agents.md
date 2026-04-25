@@ -27,7 +27,7 @@ For each task in the batch:
 - Classify the change as one of: **improvement**, **regression**, or **noise**. If it is a regression, include the regression percentage.
 
 ### 4. Resolve the task status
-- **If this is a performance task and the post-task benchmark shows a regression:** set `Status: Ignore`, add a brief note explaining the regression, and move on to the next task.
+- **If this is a performance task and the post-task benchmark shows a regression or noise:** set `Status: Ignore`, add a brief note explaining the regression, and move on to the next task.
 - **Otherwise:** set `Status: Done`.
 
 ## Per-Batch Workflow
