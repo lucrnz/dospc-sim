@@ -174,6 +174,13 @@ class DOSShell(DOSShellCommandProvider):
         self._echo_on = True
         self._redirection_executor = _RedirectionExecutor(self)
         self._batch_executor = _BatchExecutor(self)
+        self._batch_file_cache: dict[tuple[str, str, str], str | None] = {}
+        self._batch_cache_path: str = self.environment['PATH']
+        self._batch_cache_cwd: str = ''
+        self._cmd_dispatch: dict[str, Callable[[list[str]], int]] = {}
+        for attr in dir(self):
+            if attr.startswith('cmd_'):
+                self._cmd_dispatch[attr[4:].upper()] = getattr(self, attr)
 
     def _output(self, text: str = '') -> None:
         self.output_callback(text)
@@ -281,7 +288,7 @@ class DOSShell(DOSShellCommandProvider):
             return self.execute_command(alias_cmd)
 
         try:
-            handler = getattr(self, f'cmd_{command.lower()}', None)
+            handler = self._cmd_dispatch.get(command)
             if handler:
                 return handler(args)
             batch_file = self._find_batch_file(command)
@@ -402,33 +409,42 @@ class DOSShell(DOSShellCommandProvider):
         return ''
 
     def _find_batch_file(self, name: str) -> str | None:
+        cur_path = self.environment['PATH']
+        cur_cwd = self.fs.get_current_path()
+        if cur_path != self._batch_cache_path or cur_cwd != self._batch_cache_cwd:
+            self._batch_file_cache.clear()
+            self._batch_cache_path = cur_path
+            self._batch_cache_cwd = cur_cwd
+
         upper = name.upper()
+        cache_key = (upper, cur_cwd, cur_path)
+        if cache_key in self._batch_file_cache:
+            return self._batch_file_cache[cache_key]
+
+        result = self._find_batch_file_uncached(name, upper, cur_path)
+        self._batch_file_cache[cache_key] = result
+        return result
+
+    def _find_batch_file_uncached(
+        self, name: str, upper: str, path_env: str
+    ) -> str | None:
+        path_dirs = [d.strip() for d in path_env.split(';') if d.strip()]
         if upper.endswith('.BAT') or upper.endswith('.CMD'):
             if self.fs.file_exists(name):
                 return name
-            for path_dir in self.environment['PATH'].split(';'):
-                try:
-                    path_dir = path_dir.strip()
-                    if path_dir:
-                        test_path = f'{path_dir}\\{name}'
-                        if self.fs.file_exists(test_path):
-                            return test_path
-                except Exception:
-                    continue
+            for path_dir in path_dirs:
+                test_path = f'{path_dir}\\{name}'
+                if self.fs.file_exists(test_path):
+                    return test_path
             return None
-        for ext in ['.BAT', '.CMD']:
+        for ext in ('.BAT', '.CMD'):
             test_path = f'{name}{ext}'
             if self.fs.file_exists(test_path):
                 return test_path
-            for path_dir in self.environment['PATH'].split(';'):
-                try:
-                    path_dir = path_dir.strip()
-                    if path_dir:
-                        test_path = f'{path_dir}\\{name}{ext}'
-                        if self.fs.file_exists(test_path):
-                            return test_path
-                except Exception:
-                    continue
+            for path_dir in path_dirs:
+                test_path = f'{path_dir}\\{name}{ext}'
+                if self.fs.file_exists(test_path):
+                    return test_path
         return None
 
     def _execute_batch(self, batch_file: str, args: list[str]) -> int:

@@ -37,7 +37,9 @@ Status: Done
 **Files:** `src/dospc_sim/dos_shell.py`
 **Estimated impact:** CALL benchmark (1094 ops/s), any unknown-command path, batch execution.
 
-Status: Todo
+Benchmark data: Pre: CALL 4380 ops/s, Batch 1959 ops/s → Post: CALL 5863 ops/s, Batch 1969 ops/s. Improvement (CALL +34%).
+
+Status: Done
 
 ---
 
@@ -48,7 +50,9 @@ Status: Todo
 **Files:** `src/dospc_sim/dos_shell.py`, `src/dospc_sim/shell_commands.py`
 **Estimated impact:** Every command dispatch; small per-call saving but multiplied across all benchmarks.
 
-Status: Todo
+Benchmark data: Pre: ECHO 95468 ops/s, CALL 5863 ops/s, Batch 1969 ops/s → Post: ECHO 99819 ops/s, CALL 5957 ops/s, Batch 1999 ops/s. Noise (small constant-factor improvement absorbed by other bottlenecks).
+
+Status: Done
 
 ---
 
