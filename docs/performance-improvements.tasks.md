@@ -141,7 +141,9 @@ Status: Done
 **Files:** `src/dospc_sim/dos_shell.py`
 **Estimated impact:** Every prompt display; small per-call saving but called on every command.
 
-Status: Todo
+Benchmark data: Pre: Batch 2660 ops/s, CALL 7948 ops/s → Post: Batch 2719 ops/s, CALL 8304 ops/s. Improvement (CALL +4.5%).
+
+Status: Done
 
 ---
 
@@ -152,7 +154,9 @@ Status: Todo
 **Files:** `src/dospc_sim/dos_shell.py`
 **Estimated impact:** Prompt generation; minor but avoids unnecessary syscall.
 
-Status: Todo
+Benchmark data: Already addressed in Task 11 — datetime.now() is now lazily evaluated only when $D or $T meta-characters are encountered.
+
+Status: Done
 
 ---
 

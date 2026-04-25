@@ -25,6 +25,7 @@ from dospc_sim.parser import (
 from dospc_sim.shell_commands import DOSShellCommandProvider, get_shell_command_names
 
 _ENV_VAR_RE = re.compile(r'%([^%]+)%')
+_PROMPT_META_RE = re.compile(r'\$(.)', re.IGNORECASE)
 
 
 class _GotoSignal(Exception):
@@ -222,23 +223,33 @@ class DOSShell(DOSShellCommandProvider):
     def get_prompt(self) -> str:
         """Get the current DOS prompt."""
         prompt_str = self.environment.get('PROMPT', '$P$G')
+        if '$' not in prompt_str:
+            return prompt_str
         path = self.fs.get_current_path()
-        now = datetime.now()
-        prompt_str = prompt_str.replace('$$', '\x00')
-        prompt_str = prompt_str.replace('$P', path).replace('$p', path)
-        prompt_str = prompt_str.replace('$G', '>').replace('$g', '>')
-        prompt_str = prompt_str.replace('$L', '<').replace('$l', '<')
-        prompt_str = prompt_str.replace('$D', now.strftime('%m/%d/%Y')).replace(
-            '$d', now.strftime('%m/%d/%Y')
-        )
-        prompt_str = prompt_str.replace('$T', now.strftime('%H:%M:%S')).replace(
-            '$t', now.strftime('%H:%M:%S')
-        )
-        prompt_str = prompt_str.replace('$N', self.fs.drive_letter).replace(
-            '$n', self.fs.drive_letter
-        )
-        prompt_str = prompt_str.replace('\x00', '$')
-        return prompt_str
+        now = None
+        table = {
+            'P': path,
+            'G': '>',
+            'L': '<',
+            'N': self.fs.drive_letter,
+            '$': '$',
+        }
+
+        def _replace_prompt(m: re.Match) -> str:
+            nonlocal now
+            ch = m.group(1)
+            upper = ch.upper()
+            if upper in table:
+                return table[upper]
+            if upper in ('D', 'T'):
+                if now is None:
+                    now = datetime.now()
+                if upper == 'D':
+                    return now.strftime('%m/%d/%Y')
+                return now.strftime('%H:%M:%S')
+            return m.group(0)
+
+        return _PROMPT_META_RE.sub(_replace_prompt, prompt_str)
 
     def run(self) -> None:
         self.running = True
