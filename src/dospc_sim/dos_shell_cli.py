@@ -28,6 +28,15 @@ class BenchmarkResult:
         return self.iterations / self.seconds
 
 
+@dataclass(frozen=True)
+class BenchmarkCase:
+    name: str
+    setup: Callable[[], None]
+    run: Callable[[], None]
+    per_iteration_reset: Callable[[], None]
+    teardown: Callable[[], None]
+
+
 def _benchmark_time(
     fn: Callable[[], None],
     iterations: int,
@@ -137,6 +146,170 @@ def _run_stdin(shell: DOSShell, script_args: list[str]) -> int:
     return shell.execute_batch_content(content, batch_name='STDIN', args=script_args)
 
 
+def _noop() -> None:
+    return None
+
+
+def _build_benchmark_cases(shell: DOSShell) -> list[BenchmarkCase]:
+    def run(cmd: str) -> Callable[[], None]:
+        def _runner() -> None:
+            shell.execute_command(cmd)
+
+        return _runner
+
+    def remove_benchdir() -> None:
+        shell.execute_command('RD benchdir')
+
+    def ensure_benchdir() -> None:
+        shell.execute_command('RD benchdir')
+        shell.execute_command('MD benchdir')
+
+    def remove_outfile() -> None:
+        shell.execute_command('DEL out.txt')
+
+    def ensure_copy_file() -> None:
+        shell.fs.write_file('copy.txt', 'alpha\n')
+
+    def ensure_alpha() -> None:
+        shell.fs.write_file('alpha.txt', 'alpha\n')
+
+    def ensure_alpha1() -> None:
+        shell.fs.write_file('alpha1.txt', 'alpha\n')
+
+    pipe_cmd = 'TYPE beta.txt | FIND line | SORT'
+    batch_script = '\n'.join(
+        [
+            ':: Benchmark batch',
+            'ECHO OFF',
+            'SET COUNT=0',
+            ':loop',
+            'SET COUNT=1',
+            'IF EXIST beta.txt ECHO found',
+            'IF NOT ERRORLEVEL 2 ECHO ok',
+            'IF alpha==alpha ECHO match',
+            'FOR %%F IN (alpha.txt beta.txt) DO TYPE %%F',
+            'GOTO done',
+            ':done',
+        ]
+    )
+    shell.fs.write_file('batch.bat', 'ECHO batch')
+
+    return [
+        BenchmarkCase('DIR', _noop, run('DIR'), _noop, _noop),
+        BenchmarkCase('DIR /W', _noop, run('DIR /W'), _noop, _noop),
+        BenchmarkCase('DIR /A', _noop, run('DIR /A'), _noop, _noop),
+        BenchmarkCase('DIR wildcard', _noop, run('DIR *.txt'), _noop, _noop),
+        BenchmarkCase('CD', _noop, run('CD \\'), _noop, _noop),
+        BenchmarkCase(
+            'MD', remove_benchdir, run('MD benchdir'), remove_benchdir, _noop
+        ),
+        BenchmarkCase(
+            'RD', ensure_benchdir, run('RD benchdir'), run('MD benchdir'), _noop
+        ),
+        BenchmarkCase(
+            'COPY',
+            ensure_alpha,
+            run('COPY alpha.txt copy.txt'),
+            run('DEL copy.txt'),
+            _noop,
+        ),
+        BenchmarkCase(
+            'DEL', ensure_copy_file, run('DEL copy.txt'), ensure_copy_file, _noop
+        ),
+        BenchmarkCase(
+            'REN',
+            ensure_alpha,
+            run('REN alpha.txt alpha1.txt'),
+            run('REN alpha1.txt alpha.txt'),
+            _noop,
+        ),
+        BenchmarkCase(
+            'MOVE',
+            ensure_alpha1,
+            run('MOVE alpha1.txt docs'),
+            run('MOVE docs\\alpha1.txt alpha1.txt'),
+            _noop,
+        ),
+        BenchmarkCase('COPY wildcard', _noop, run('COPY *.txt docs'), _noop, _noop),
+        BenchmarkCase('TYPE', _noop, run('TYPE beta.txt'), _noop, _noop),
+        BenchmarkCase('TREE', _noop, run('TREE /F'), _noop, _noop),
+        BenchmarkCase('FIND', _noop, run('FIND /I line beta.txt'), _noop, _noop),
+        BenchmarkCase('MORE', _noop, run('MORE beta.txt'), _noop, _noop),
+        BenchmarkCase('SORT', _noop, run('SORT beta.txt'), _noop, _noop),
+        BenchmarkCase('FC', _noop, run('FC beta.txt gamma.log'), _noop, _noop),
+        BenchmarkCase('SET', _noop, run('SET BENCH=1'), _noop, run('SET BENCH=')),
+        BenchmarkCase('PROMPT', _noop, run('PROMPT $P$G'), _noop, _noop),
+        BenchmarkCase('PATH', _noop, run('PATH C:\\'), _noop, _noop),
+        BenchmarkCase('DATE', _noop, run('DATE'), _noop, _noop),
+        BenchmarkCase('TIME', _noop, run('TIME'), _noop, _noop),
+        BenchmarkCase('VER', _noop, run('VER'), _noop, _noop),
+        BenchmarkCase('ECHO', _noop, run('ECHO hello'), _noop, _noop),
+        BenchmarkCase('CLS', _noop, run('CLS'), _noop, _noop),
+        BenchmarkCase('Pipes', _noop, run(pipe_cmd), _noop, _noop),
+        BenchmarkCase(
+            'Redirect >',
+            remove_outfile,
+            run('ECHO hi > out.txt'),
+            remove_outfile,
+            _noop,
+        ),
+        BenchmarkCase(
+            'Redirect >>',
+            remove_outfile,
+            run('ECHO hi >> out.txt'),
+            remove_outfile,
+            _noop,
+        ),
+        BenchmarkCase('Redirect <', _noop, run('FIND line < beta.txt'), _noop, _noop),
+        BenchmarkCase('CALL', _noop, run('CALL batch.bat'), _noop, _noop),
+        BenchmarkCase(
+            'Batch',
+            _noop,
+            lambda: shell.execute_batch_content(batch_script),
+            run('ECHO ON'),
+            _noop,
+        ),
+    ]
+
+
+def _execute_benchmark_cases(
+    shell: DOSShell, cases: list[BenchmarkCase], iterations: int
+) -> list[BenchmarkResult]:
+    results: list[BenchmarkResult] = []
+
+    for case in cases:
+        case.setup()
+        _reset_output(shell)
+
+        def reset(current_case: BenchmarkCase = case) -> None:
+            current_case.per_iteration_reset()
+            _reset_output(shell)
+
+        duration = _benchmark_time(case.run, iterations, reset=reset)
+        results.append(
+            BenchmarkResult(name=case.name, iterations=iterations, seconds=duration)
+        )
+        case.teardown()
+        _reset_output(shell)
+
+    return results
+
+
+def _print_benchmark_results(shell: DOSShell, results: list[BenchmarkResult]) -> None:
+    _reset_output(shell)
+    header = f'{"Benchmark":<22} {"Iterations":>10} {"Seconds":>12} {"Ops/Sec":>12}'
+    shell._output_line(header)
+    shell._output_line('-' * len(header))
+    for result in results:
+        shell._output_line(
+            f'{result.name:<22} {result.iterations:>10} '
+            f'{result.seconds:>12.4f} {result.ops_per_sec:>12.2f}'
+        )
+
+    for line in _output_lines(shell):
+        print(line)
+
+
 def _run_benchmark(iterations: int) -> int:
     username = getpass.getuser() or 'local'
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -150,162 +323,9 @@ def _run_benchmark(iterations: int) -> int:
         shell._output_capture = output_capture
         _write_fixture_files(shell)
 
-        def _noop() -> None:
-            return None
-
-        def run(cmd: str) -> Callable[[], None]:
-            def _runner() -> None:
-                shell.execute_command(cmd)
-
-            return _runner
-
-        def remove_benchdir() -> None:
-            shell.execute_command('RD benchdir')
-
-        def ensure_benchdir() -> None:
-            shell.execute_command('RD benchdir')
-            shell.execute_command('MD benchdir')
-
-        def remove_outfile() -> None:
-            shell.execute_command('DEL out.txt')
-
-        def ensure_copy_file() -> None:
-            shell.fs.write_file('copy.txt', 'alpha\n')
-
-        def ensure_alpha() -> None:
-            shell.fs.write_file('alpha.txt', 'alpha\n')
-
-        def ensure_alpha1() -> None:
-            shell.fs.write_file('alpha1.txt', 'alpha\n')
-
-        benchmarks: list[BenchmarkResult] = []
-
-        def add_benchmark(
-            name: str,
-            setup: Callable[[], None],
-            fn: Callable[[], None],
-            per_iteration_reset: Callable[[], None],
-            teardown: Callable[[], None],
-        ) -> None:
-            setup()
-            _reset_output(shell)
-
-            def reset() -> None:
-                per_iteration_reset()
-                _reset_output(shell)
-
-            duration = _benchmark_time(fn, iterations, reset=reset)
-            benchmarks.append(
-                BenchmarkResult(name=name, iterations=iterations, seconds=duration)
-            )
-            teardown()
-            _reset_output(shell)
-
-        add_benchmark('DIR', _noop, run('DIR'), _noop, _noop)
-        add_benchmark('DIR /W', _noop, run('DIR /W'), _noop, _noop)
-        add_benchmark('DIR /A', _noop, run('DIR /A'), _noop, _noop)
-        add_benchmark('DIR wildcard', _noop, run('DIR *.txt'), _noop, _noop)
-        add_benchmark('CD', _noop, run('CD \\'), _noop, _noop)
-        add_benchmark('MD', remove_benchdir, run('MD benchdir'), remove_benchdir, _noop)
-        add_benchmark(
-            'RD', ensure_benchdir, run('RD benchdir'), run('MD benchdir'), _noop
-        )
-        add_benchmark(
-            'COPY',
-            ensure_alpha,
-            run('COPY alpha.txt copy.txt'),
-            run('DEL copy.txt'),
-            _noop,
-        )
-        add_benchmark(
-            'DEL', ensure_copy_file, run('DEL copy.txt'), ensure_copy_file, _noop
-        )
-        add_benchmark(
-            'REN',
-            ensure_alpha,
-            run('REN alpha.txt alpha1.txt'),
-            run('REN alpha1.txt alpha.txt'),
-            _noop,
-        )
-        add_benchmark(
-            'MOVE',
-            ensure_alpha1,
-            run('MOVE alpha1.txt docs'),
-            run('MOVE docs\\alpha1.txt alpha1.txt'),
-            _noop,
-        )
-        add_benchmark('COPY wildcard', _noop, run('COPY *.txt docs'), _noop, _noop)
-        add_benchmark('TYPE', _noop, run('TYPE beta.txt'), _noop, _noop)
-        add_benchmark('TREE', _noop, run('TREE /F'), _noop, _noop)
-        add_benchmark('FIND', _noop, run('FIND /I line beta.txt'), _noop, _noop)
-        add_benchmark('MORE', _noop, run('MORE beta.txt'), _noop, _noop)
-        add_benchmark('SORT', _noop, run('SORT beta.txt'), _noop, _noop)
-        add_benchmark('FC', _noop, run('FC beta.txt gamma.log'), _noop, _noop)
-        add_benchmark('SET', _noop, run('SET BENCH=1'), _noop, run('SET BENCH='))
-        add_benchmark('PROMPT', _noop, run('PROMPT $P$G'), _noop, _noop)
-        add_benchmark('PATH', _noop, run('PATH C:\\'), _noop, _noop)
-        add_benchmark('DATE', _noop, run('DATE'), _noop, _noop)
-        add_benchmark('TIME', _noop, run('TIME'), _noop, _noop)
-        add_benchmark('VER', _noop, run('VER'), _noop, _noop)
-        add_benchmark('ECHO', _noop, run('ECHO hello'), _noop, _noop)
-        add_benchmark('CLS', _noop, run('CLS'), _noop, _noop)
-
-        pipe_cmd = 'TYPE beta.txt | FIND line | SORT'
-        add_benchmark('Pipes', _noop, run(pipe_cmd), _noop, _noop)
-        add_benchmark(
-            'Redirect >',
-            remove_outfile,
-            run('ECHO hi > out.txt'),
-            remove_outfile,
-            _noop,
-        )
-        add_benchmark(
-            'Redirect >>',
-            remove_outfile,
-            run('ECHO hi >> out.txt'),
-            remove_outfile,
-            _noop,
-        )
-        add_benchmark('Redirect <', _noop, run('FIND line < beta.txt'), _noop, _noop)
-
-        batch_script = '\n'.join(
-            [
-                ':: Benchmark batch',
-                'ECHO OFF',
-                'SET COUNT=0',
-                ':loop',
-                'SET COUNT=1',
-                'IF EXIST beta.txt ECHO found',
-                'IF NOT ERRORLEVEL 2 ECHO ok',
-                'IF alpha==alpha ECHO match',
-                'FOR %%F IN (alpha.txt beta.txt) DO TYPE %%F',
-                'GOTO done',
-                ':done',
-            ]
-        )
-
-        shell.fs.write_file('batch.bat', 'ECHO batch')
-        add_benchmark('CALL', _noop, run('CALL batch.bat'), _noop, _noop)
-        add_benchmark(
-            'Batch',
-            _noop,
-            lambda: shell.execute_batch_content(batch_script),
-            run('ECHO ON'),
-            _noop,
-        )
-
-        _reset_output(shell)
-        header = f'{"Benchmark":<22} {"Iterations":>10} {"Seconds":>12} {"Ops/Sec":>12}'
-        shell._output_line(header)
-        shell._output_line('-' * len(header))
-        for result in benchmarks:
-            shell._output_line(
-                f'{result.name:<22} {result.iterations:>10} '
-                f'{result.seconds:>12.4f} {result.ops_per_sec:>12.2f}'
-            )
-
-        for line in _output_lines(shell):
-            print(line)
+        cases = _build_benchmark_cases(shell)
+        results = _execute_benchmark_cases(shell, cases, iterations)
+        _print_benchmark_results(shell, results)
 
     return 0
 
