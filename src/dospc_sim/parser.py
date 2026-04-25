@@ -54,7 +54,7 @@ call_command: "CALL"i simple_command
 pause_command: "PAUSE"i
 if_command: "IF"i not_modifier? if_condition command_line
 for_command: "FOR"i FOR_VAR "IN"i "(" for_items ")" "DO"i command_line
-label: ":" LABEL_NAME
+label: LABEL_TOKEN
 comment: COMMENT
 
 if_condition: "EXIST"i WORD        -> if_exist_condition
@@ -80,8 +80,8 @@ switch: "/" SWITCH_CHARS
 command_name: WORD
 
 FOR_VAR.2: /%%[A-Za-z]/
-LABEL_NAME: /[A-Za-z_][A-Za-z0-9_]*/
-COMMENT: /::[^\r\n]*/ | /(?i:REM)(?=$|\s).*/
+LABEL_TOKEN.3: /:[A-Za-z_][A-Za-z0-9_]*/
+COMMENT.3: /::[^\r\n]*/ | /(?i:REM)(?=$|\s).*/
 SWITCH_CHARS: /[A-Za-z0-9]+/
 NUMBER: /\d+/
 COMPARE_EXPR: /[^\s|<>]+(?:\s*==\s*[^\s|<>]+)+/
@@ -197,8 +197,8 @@ class _DOSTransformer(Transformer):
         return ForCommand(var=str(var)[2:].upper(), items=items, command=command)
 
     @v_args(inline=True)
-    def label(self, name):
-        return Label(name=str(name).upper())
+    def label(self, token):
+        return Label(name=str(token)[1:].upper())
 
     def for_items(self, children):
         return [str(item) for item in children]
@@ -260,18 +260,15 @@ class _DOSTransformer(Transformer):
 
 _parser = Lark(
     _DOS_GRAMMAR,
-    parser='earley',
-    ambiguity='resolve',
+    parser='lalr',
     maybe_placeholders=False,
+    transformer=_DOSTransformer(),
 )
-
-_transformer = _DOSTransformer()
 
 
 def _parse_via_lark(line: str) -> CommandLine | None:
     """Parse using the Lark grammar."""
-    tree = _parser.parse(line)
-    result = _transformer.transform(tree)
+    result = _parser.parse(line)
     if isinstance(result, BatchProgram) and result.lines:
         cl = result.lines[0]
         if isinstance(cl, CommandLine):

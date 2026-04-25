@@ -355,14 +355,13 @@ class DOSShell(DOSShellCommandProvider):
         result = 0
         inner = for_cmd.command
         raw_body = self._ast_to_raw(inner) if inner else ''
+        pattern = re.compile(rf'%%{re.escape(for_cmd.var)}', re.IGNORECASE)
         for item in for_cmd.items:
-            expanded = re.sub(
-                rf'%%{re.escape(for_cmd.var)}',
-                lambda _match, replacement=item: replacement,
-                raw_body,
-                flags=re.IGNORECASE,
-            )
-            result = self.execute_command(expanded)
+            substituted = pattern.sub(item, raw_body)
+            expanded = self.expand_variables(substituted)
+            parsed = parse_command(expanded)
+            if parsed is not None:
+                result = self._execute_parsed(parsed)
         return result
 
     def _ast_to_raw(self, cl: CommandLine) -> str:
