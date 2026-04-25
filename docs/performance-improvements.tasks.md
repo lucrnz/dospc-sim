@@ -50,7 +50,7 @@ Status: Done
 **Files:** `src/dospc_sim/dos_shell.py`, `src/dospc_sim/shell_commands.py`
 **Estimated impact:** Every command dispatch; small per-call saving but multiplied across all benchmarks.
 
-Benchmark data: Pre: ECHO 95468 ops/s, CALL 5863 ops/s, Batch 1969 ops/s → Post: ECHO 99819 ops/s, CALL 5957 ops/s, Batch 1999 ops/s. Noise (small constant-factor improvement absorbed by other bottlenecks).
+Benchmark data: Pre: ECHO 95468 ops/s, CALL 5863 ops/s, Batch 1969 ops/s → Post: ECHO 99819 ops/s, CALL 5957 ops/s, Batch 1999 ops/s. Noise, but re-applied because the dispatch table is cleaner code than per-call getattr + f-string formatting.
 
 Status: Done
 
