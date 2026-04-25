@@ -219,4 +219,6 @@ These properties on `SimpleCommand` rebuild new lists via list comprehensions on
 **Files:** `src/dospc_sim/parser_ast.py`
 **Estimated impact:** Every command that reads args/switches; small per-call saving.
 
-Status: Todo
+Benchmark data: Pre: ECHO 98717 ops/s, Batch 2757 ops/s, CALL 8487 ops/s → Post: ECHO 98178 ops/s, Batch 2708 ops/s, CALL 8239 ops/s. Noise (properties are only accessed once per command execution; caching eliminates list comprehension but adds __post_init__ overhead).
+
+Status: Done
