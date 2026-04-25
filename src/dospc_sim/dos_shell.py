@@ -99,7 +99,9 @@ class _BatchExecutor:
 
             raw_lines = content.splitlines()
             labels: dict[str, int] = {}
-            line_index: list[str | None] = []
+            # Each entry is None (skip), a (raw, CommandLine) pre-parsed
+            # tuple, or a raw string needing variable expansion at runtime.
+            line_index: list[tuple[str, CommandLine] | str | None] = []
             for raw in raw_lines:
                 stripped = raw.strip()
                 if (
@@ -109,26 +111,42 @@ class _BatchExecutor:
                 ):
                     line_index.append(None)
                 else:
-                    line_index.append(stripped)
-                    label_match = re.match(r'^:([A-Za-z_][A-Za-z0-9_]*)\s*$', stripped)
+                    label_match = re.match(
+                        r'^:([A-Za-z_][A-Za-z0-9_]*)\s*$', stripped
+                    )
                     if label_match:
-                        labels[label_match.group(1).upper()] = len(line_index) - 1
+                        labels[label_match.group(1).upper()] = len(line_index)
+                        line_index.append(None)
+                        continue
+                    if '%' in stripped:
+                        line_index.append(stripped)
+                    else:
+                        parsed = parse_command(stripped)
+                        if parsed is not None:
+                            line_index.append((stripped, parsed))
+                        else:
+                            line_index.append(None)
 
             pc = 0
             while pc < len(line_index):
-                raw_line = line_index[pc]
+                entry = line_index[pc]
                 pc += 1
 
-                if raw_line is None:
+                if entry is None:
                     continue
 
-                expanded = self.shell.expand_variables(raw_line)
-                parsed = parse_command(expanded)
-                if parsed is None:
-                    continue
+                if isinstance(entry, str):
+                    expanded = self.shell.expand_variables(entry)
+                    parsed = parse_command(expanded)
+                    if parsed is None:
+                        continue
+                else:
+                    expanded, parsed = entry
 
                 if self.shell._echo_on and not isinstance(parsed.command, Label):
-                    self.shell._output_line(f'{self.shell.get_prompt()}{expanded}')
+                    self.shell._output_line(
+                        f'{self.shell.get_prompt()}{expanded}'
+                    )
 
                 try:
                     self.shell._execute_parsed(parsed)

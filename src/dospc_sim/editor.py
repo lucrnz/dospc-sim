@@ -53,6 +53,30 @@ class EditorRenderer:
     def draw_prompt(self, prompt: str) -> None:
         self._out(f'\x1b[{24};1H\x1b[K{prompt}')
 
+    def _start_row(self, buffer: EditorBuffer) -> int:
+        return max(0, buffer.cursor_row - 10)
+
+    def _cursor_pos(self, buffer: EditorBuffer) -> str:
+        start_row = self._start_row(buffer)
+        screen_row = buffer.cursor_row - start_row + 3
+        screen_col = buffer.cursor_col + 6
+        return f'\x1b[{screen_row};{screen_col}H'
+
+    def update_cursor(self, buffer: EditorBuffer) -> None:
+        self._out(self._cursor_pos(buffer))
+        self._out('\x1b[?25h')
+
+    def redraw_line(self, buffer: EditorBuffer) -> None:
+        start_row = self._start_row(buffer)
+        screen_row = buffer.cursor_row - start_row + 2
+        if buffer.cursor_row < len(buffer.lines):
+            line = buffer.lines[buffer.cursor_row]
+            line_num = f'{buffer.cursor_row + 1:4d} '
+            display_line = line[:73]
+            self._out(f'\x1b[{screen_row + 1};1H\x1b[K{line_num}{display_line}')
+        self._out(self._cursor_pos(buffer))
+        self._out('\x1b[?25h')
+
     def draw_screen(self, buffer: EditorBuffer) -> None:
         screen_lines = []
         screen_lines.append('\x1b[2J\x1b[H')
@@ -64,7 +88,7 @@ class EditorRenderer:
         screen_lines.append(f'\x1b[7m{title_bar}\x1b[0m')
 
         visible_lines = 21
-        start_row = max(0, buffer.cursor_row - 10)
+        start_row = self._start_row(buffer)
         for i in range(visible_lines):
             row = start_row + i
             if row < len(buffer.lines):
@@ -80,10 +104,9 @@ class EditorRenderer:
         screen_lines.append(f'\x1b[7m{status}\x1b[0m')
 
         self._out('\n'.join(screen_lines))
-        cursor_screen_row = buffer.cursor_row - start_row + 3
-        cursor_screen_col = buffer.cursor_col + 6
-        self._out(f'\x1b[{cursor_screen_row};{cursor_screen_col}H')
+        self._out(self._cursor_pos(buffer))
         self._out('\x1b[?25h')
+        self._last_start_row = start_row
 
 
 class TextEditor:
@@ -279,12 +302,12 @@ class TextEditor:
         # Home key - multiple variants for different terminals
         elif seq in ('\x1b[H', '\x1b[1~', '\x1bOH'):
             self.cursor_col = 0
-            self._draw_screen()
+            self._smart_redraw()
         # End key - multiple variants for different terminals
         elif seq in ('\x1b[F', '\x1b[4~', '\x1bOF'):
             if self.cursor_row < len(self.lines):
                 self.cursor_col = len(self.lines[self.cursor_row])
-            self._draw_screen()
+            self._smart_redraw()
         # Insert key
         elif seq == '\x1b[2~':
             pass  # Insert mode not implemented
@@ -309,7 +332,7 @@ class TextEditor:
         )
         self.cursor_col += len(char)
         self.modified = True
-        self._draw_screen()
+        self.renderer.redraw_line(self.buffer)
 
     def _insert_newline(self) -> None:
         """Insert a new line at cursor position."""
@@ -334,14 +357,14 @@ class TextEditor:
             )
             self.cursor_col -= 1
             self.modified = True
+            self.renderer.redraw_line(self.buffer)
         elif self.cursor_row > 0:
-            # Join with previous line
             self.cursor_col = len(self.lines[self.cursor_row - 1])
             self.lines[self.cursor_row - 1] += self.lines[self.cursor_row]
             self.lines.pop(self.cursor_row)
             self.cursor_row -= 1
             self.modified = True
-        self._draw_screen()
+            self._draw_screen()
 
     def _delete_char(self) -> None:
         """Delete character at cursor position."""
@@ -352,12 +375,12 @@ class TextEditor:
                     line[: self.cursor_col] + line[self.cursor_col + 1 :]
                 )
                 self.modified = True
+                self.renderer.redraw_line(self.buffer)
             elif self.cursor_row < len(self.lines) - 1:
-                # Join with next line
                 self.lines[self.cursor_row] += self.lines[self.cursor_row + 1]
                 self.lines.pop(self.cursor_row + 1)
                 self.modified = True
-        self._draw_screen()
+                self._draw_screen()
 
     def _move_cursor_up(self) -> None:
         """Move cursor up one line."""
@@ -367,7 +390,7 @@ class TextEditor:
                 self.cursor_col = min(self.cursor_col, len(self.lines[self.cursor_row]))
             else:
                 self.cursor_col = 0
-        self._draw_screen()
+        self._smart_redraw()
 
     def _move_cursor_down(self) -> None:
         """Move cursor down one line."""
@@ -377,7 +400,7 @@ class TextEditor:
                 self.cursor_col = min(self.cursor_col, len(self.lines[self.cursor_row]))
             else:
                 self.cursor_col = 0
-        self._draw_screen()
+        self._smart_redraw()
 
     def _move_cursor_left(self) -> None:
         """Move cursor left one character."""
@@ -390,7 +413,7 @@ class TextEditor:
                 if self.cursor_row < len(self.lines)
                 else 0
             )
-        self._draw_screen()
+        self._smart_redraw()
 
     def _move_cursor_right(self) -> None:
         """Move cursor right one character."""
@@ -400,7 +423,7 @@ class TextEditor:
             elif self.cursor_row < len(self.lines) - 1:
                 self.cursor_row += 1
                 self.cursor_col = 0
-        self._draw_screen()
+        self._smart_redraw()
 
     def _page_up(self) -> None:
         """Move up one page."""
@@ -480,6 +503,15 @@ class TextEditor:
         # Wait for any key
         self.get_input()
         self._draw_screen()
+
+    def _smart_redraw(self) -> None:
+        """Redraw only cursor if viewport hasn't scrolled, else full redraw."""
+        new_start = self.renderer._start_row(self.buffer)
+        last = getattr(self.renderer, '_last_start_row', None)
+        if last is not None and new_start == last:
+            self.renderer.update_cursor(self.buffer)
+        else:
+            self.renderer.draw_screen(self.buffer)
 
     def _draw_screen(self) -> None:
         """Redraw the entire screen."""

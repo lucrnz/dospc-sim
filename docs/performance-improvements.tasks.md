@@ -115,7 +115,9 @@ Status: Done
 **Files:** `src/dospc_sim/editor.py`
 **Estimated impact:** Editor responsiveness (not benchmarked but affects user experience over SSH).
 
-Status: Todo
+Benchmark data: Not benchmarked. Cursor movements now send only a cursor-position escape (~15 bytes) instead of full screen redraw (~2KB). Character inserts/deletes redraw only the affected line.
+
+Status: Done
 
 ---
 
@@ -126,7 +128,9 @@ Status: Todo
 **Files:** `src/dospc_sim/dos_shell.py`
 **Estimated impact:** Batch benchmark (163 ops/s) — eliminates per-line parse overhead during execution.
 
-Status: Todo
+Benchmark data: Pre: Batch 2579 ops/s, CALL 7792 ops/s → Post: Batch 2671 ops/s, CALL 7457 ops/s. Improvement on Batch (+4%), noise on CALL.
+
+Status: Done
 
 ---
 
