@@ -188,16 +188,18 @@ class DOSShell(DOSShellCommandProvider):
     def _output_line(self, text: str = '') -> None:
         self._output(text)
 
+    def _env_var_replace(self, match: re.Match) -> str:
+        var_name = match.group(1).upper()
+        env = self.environment
+        if var_name in env:
+            return env[var_name]
+        return match.group(0)
+
     def expand_variables(self, text: str) -> str:
         """Expand %VAR% environment variable references in text."""
-
-        def _replace(match):
-            var_name = match.group(1).upper()
-            if var_name in self.environment:
-                return self.environment[var_name]
-            return match.group(0)
-
-        return _ENV_VAR_RE.sub(_replace, text)
+        if '%' not in text:
+            return text
+        return _ENV_VAR_RE.sub(self._env_var_replace, text)
 
     def get_prompt(self) -> str:
         """Get the current DOS prompt."""

@@ -63,7 +63,9 @@ Status: Done
 **Files:** `src/dospc_sim/dos_shell.py`
 **Estimated impact:** All benchmarks; largest impact on Batch (many lines expanded).
 
-Status: Todo
+Benchmark data: Pre: Batch 1998 ops/s, ECHO 94560 ops/s → Post: Batch 1987 ops/s, ECHO 94533 ops/s. Noise (the short-circuit avoids regex overhead on lines without %, which is the common case but not heavily exercised in the benchmark).
+
+Status: Done
 
 ---
 
@@ -74,7 +76,9 @@ Status: Todo
 **Files:** `src/dospc_sim/dos_shell.py`
 **Estimated impact:** CALL, batch file lookups, unknown-command fallback.
 
-Status: Todo
+Benchmark data: Already addressed in Task 3 — _find_batch_file_uncached splits PATH once at the top and reuses the list. No separate benchmark needed.
+
+Status: Done
 
 ---
 
