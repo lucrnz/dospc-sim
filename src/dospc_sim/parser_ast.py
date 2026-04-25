@@ -28,24 +28,6 @@ class CommandName:
 class SimpleCommand:
     name: CommandName
     args: list[Argument | Switch] = field(default_factory=list)
-    _cached_arguments: list[str] = field(default_factory=list, init=False, repr=False)
-    _cached_switches: list[Switch] = field(default_factory=list, init=False, repr=False)
-    _cached_positional: list[str] = field(default_factory=list, init=False, repr=False)
-
-    def __post_init__(self) -> None:
-        args_list: list[str] = []
-        switches: list[Switch] = []
-        positional: list[str] = []
-        for a in self.args:
-            if isinstance(a, Switch):
-                args_list.append(a.value)
-                switches.append(a)
-            else:
-                args_list.append(a.value)
-                positional.append(a.value)
-        self._cached_arguments = args_list
-        self._cached_switches = switches
-        self._cached_positional = positional
 
     @property
     def command(self) -> str:
@@ -53,15 +35,15 @@ class SimpleCommand:
 
     @property
     def arguments(self) -> list[str]:
-        return self._cached_arguments
+        return [a.value for a in self.args]
 
     @property
     def switches(self) -> list[Switch]:
-        return self._cached_switches
+        return [a for a in self.args if isinstance(a, Switch)]
 
     @property
     def positional_args(self) -> list[str]:
-        return self._cached_positional
+        return [a.value for a in self.args if isinstance(a, Argument)]
 
 
 @dataclass(slots=True)

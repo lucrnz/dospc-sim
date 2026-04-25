@@ -196,18 +196,7 @@ class DOSShell(DOSShellCommandProvider):
         self._batch_file_cache: dict[tuple[str, str, str], str | None] = {}
         self._batch_cache_path: str = self.environment['PATH']
         self._batch_cache_cwd: str = ''
-        self._cmd_dispatch: dict[str, Callable[[list[str]], int]] = {}
-        for attr in dir(self):
-            if attr.startswith('cmd_'):
-                self._cmd_dispatch[attr[4:].upper()] = getattr(self, attr)
-        self._ast_dispatch: dict[type, Callable] = {
-            EchoCommand: self._execute_echo,
-            SimpleCommand: self._execute_simple,
-            PipeCommand: self._execute_pipe,
-            CallCommand: self._execute_call,
-            IfCommand: self._execute_if,
-            ForCommand: self._execute_for,
-        }
+
 
     def _output(self, text: str = '') -> None:
         self.output_callback(text)
@@ -215,18 +204,16 @@ class DOSShell(DOSShellCommandProvider):
     def _output_line(self, text: str = '') -> None:
         self._output(text)
 
-    def _env_var_replace(self, match: re.Match) -> str:
-        var_name = match.group(1).upper()
-        env = self.environment
-        if var_name in env:
-            return env[var_name]
-        return match.group(0)
-
     def expand_variables(self, text: str) -> str:
         """Expand %VAR% environment variable references in text."""
-        if '%' not in text:
-            return text
-        return _ENV_VAR_RE.sub(self._env_var_replace, text)
+
+        def _replace(match):
+            var_name = match.group(1).upper()
+            if var_name in self.environment:
+                return self.environment[var_name]
+            return match.group(0)
+
+        return _ENV_VAR_RE.sub(_replace, text)
 
     def get_prompt(self) -> str:
         """Get the current DOS prompt."""
@@ -284,15 +271,24 @@ class DOSShell(DOSShellCommandProvider):
 
     def _execute_ast(self, ast) -> int:
         """Dispatch execution based on AST node type."""
+        if isinstance(ast, EchoCommand):
+            return self._execute_echo(ast)
+        if isinstance(ast, SimpleCommand):
+            return self._execute_simple(ast)
+        if isinstance(ast, PipeCommand):
+            return self._execute_pipe(ast)
         if isinstance(ast, GotoCommand):
             raise _GotoSignal(ast.label)
+        if isinstance(ast, CallCommand):
+            return self._execute_call(ast)
         if isinstance(ast, PauseCommand):
             return self._execute_pause()
+        if isinstance(ast, IfCommand):
+            return self._execute_if(ast)
+        if isinstance(ast, ForCommand):
+            return self._execute_for(ast)
         if isinstance(ast, Label):
             return 0
-        handler = self._ast_dispatch.get(type(ast))
-        if handler is not None:
-            return handler(ast)
         return 0
 
     def _execute_echo(self, echo: EchoCommand) -> int:
@@ -318,7 +314,7 @@ class DOSShell(DOSShellCommandProvider):
             return self.execute_command(alias_cmd)
 
         try:
-            handler = self._cmd_dispatch.get(command)
+            handler = getattr(self, f'cmd_{command.lower()}', None)
             if handler:
                 return handler(args)
             batch_file = self._find_batch_file(command)
@@ -392,13 +388,14 @@ class DOSShell(DOSShellCommandProvider):
         result = 0
         inner = for_cmd.command
         raw_body = self._ast_to_raw(inner) if inner else ''
-        pattern = re.compile(rf'%%{re.escape(for_cmd.var)}', re.IGNORECASE)
         for item in for_cmd.items:
-            substituted = pattern.sub(item, raw_body)
-            expanded = self.expand_variables(substituted)
-            parsed = parse_command(expanded)
-            if parsed is not None:
-                result = self._execute_parsed(parsed)
+            expanded = re.sub(
+                rf'%%{re.escape(for_cmd.var)}',
+                lambda _match, replacement=item: replacement,
+                raw_body,
+                flags=re.IGNORECASE,
+            )
+            result = self.execute_command(expanded)
         return result
 
     def _ast_to_raw(self, cl: CommandLine) -> str:

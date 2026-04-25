@@ -26,7 +26,7 @@ Status: Done
 
 Benchmark data: Pre: Batch 1956 ops/s, CALL 4396 ops/s → Post: Batch 1943 ops/s, CALL 4418 ops/s. Noise (no dedicated FOR benchmark; the optimization reduces per-iteration overhead in FOR loops specifically).
 
-Status: Done
+Status: Reverted (noise)
 
 ---
 
@@ -52,7 +52,7 @@ Status: Done
 
 Benchmark data: Pre: ECHO 95468 ops/s, CALL 5863 ops/s, Batch 1969 ops/s → Post: ECHO 99819 ops/s, CALL 5957 ops/s, Batch 1999 ops/s. Noise (small constant-factor improvement absorbed by other bottlenecks).
 
-Status: Done
+Status: Reverted (noise)
 
 ---
 
@@ -65,7 +65,7 @@ Status: Done
 
 Benchmark data: Pre: Batch 1998 ops/s, ECHO 94560 ops/s → Post: Batch 1987 ops/s, ECHO 94533 ops/s. Noise (the short-circuit avoids regex overhead on lines without %, which is the common case but not heavily exercised in the benchmark).
 
-Status: Done
+Status: Reverted (noise)
 
 ---
 
@@ -182,7 +182,7 @@ The inner function `_replace` inside `expand_variables` captures `self.environme
 
 Benchmark data: Already addressed in Task 5 — the _replace closure was converted to a bound method _env_var_replace.
 
-Status: Done
+Status: Reverted (Task 5 reverted)
 
 ---
 
@@ -195,7 +195,7 @@ Status: Done
 
 Benchmark data: Pre: ECHO 103520 ops/s, Batch 2759 ops/s → Post: ECHO 99984 ops/s, Batch 2735 ops/s. Noise (isinstance chain was already fast for the common case).
 
-Status: Done
+Status: Reverted (noise)
 
 ---
 
@@ -221,4 +221,4 @@ These properties on `SimpleCommand` rebuild new lists via list comprehensions on
 
 Benchmark data: Pre: ECHO 98717 ops/s, Batch 2757 ops/s, CALL 8487 ops/s → Post: ECHO 98178 ops/s, Batch 2708 ops/s, CALL 8239 ops/s. Noise (properties are only accessed once per command execution; caching eliminates list comprehension but adds __post_init__ overhead).
 
-Status: Done
+Status: Reverted (noise)
