@@ -196,7 +196,10 @@ class DOSShell(DOSShellCommandProvider):
         self._batch_file_cache: dict[tuple[str, str, str], str | None] = {}
         self._batch_cache_path: str = self.environment['PATH']
         self._batch_cache_cwd: str = ''
-
+        self._cmd_dispatch: dict[str, Callable[[list[str]], int]] = {}
+        for attr in dir(self):
+            if attr.startswith('cmd_'):
+                self._cmd_dispatch[attr[4:].upper()] = getattr(self, attr)
 
     def _output(self, text: str = '') -> None:
         self.output_callback(text)
@@ -314,7 +317,7 @@ class DOSShell(DOSShellCommandProvider):
             return self.execute_command(alias_cmd)
 
         try:
-            handler = getattr(self, f'cmd_{command.lower()}', None)
+            handler = self._cmd_dispatch.get(command)
             if handler:
                 return handler(args)
             batch_file = self._find_batch_file(command)

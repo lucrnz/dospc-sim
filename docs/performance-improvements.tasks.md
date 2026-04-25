@@ -52,7 +52,7 @@ Status: Done
 
 Benchmark data: Pre: ECHO 95468 ops/s, CALL 5863 ops/s, Batch 1969 ops/s → Post: ECHO 99819 ops/s, CALL 5957 ops/s, Batch 1999 ops/s. Noise (small constant-factor improvement absorbed by other bottlenecks).
 
-Status: Reverted (noise)
+Status: Done
 
 ---
 
