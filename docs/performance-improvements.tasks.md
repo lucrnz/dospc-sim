@@ -89,7 +89,9 @@ Status: Done
 **Files:** `src/dospc_sim/filesystem.py`
 **Estimated impact:** Every filesystem operation (DIR, TYPE, COPY, FIND, etc.).
 
-Status: Todo
+Benchmark data: Pre: DIR 5131 ops/s, CD 11561 ops/s, TYPE 9893 ops/s, CALL 6057 ops/s, Batch 2013 ops/s → Post: DIR 5920 ops/s, CD 16196 ops/s, TYPE 14048 ops/s, CALL 7365 ops/s, Batch 2412 ops/s. Improvement (CD +40%, TYPE +42%, CALL +22%, Batch +20%).
+
+Status: Done
 
 ---
 
@@ -100,7 +102,9 @@ Status: Todo
 **Files:** `src/dospc_sim/filesystem.py`
 **Estimated impact:** DIR benchmarks (2000-2500 ops/s), TREE, tab completion, wildcard COPY/DEL.
 
-Status: Todo
+Benchmark data: Pre: DIR 5920 ops/s, DIR /W 6874 ops/s, DIR /A 5587 ops/s → Post: DIR 7082 ops/s, DIR /W 8659 ops/s, DIR /A 6538 ops/s. Improvement (DIR +20%, DIR /W +26%, DIR /A +17%).
+
+Status: Done
 
 ---
 

@@ -73,16 +73,17 @@ class UserFilesystem:
             raise PermissionError('Access denied: path outside home directory') from exc
 
         # Case-insensitive resolution for DOS compatibility
-        target = self._find_case_insensitive(target)
-        target = target.resolve(strict=False)
+        resolved = self._find_case_insensitive(target)
+        if resolved is not target:
+            resolved = resolved.resolve(strict=False)
+            try:
+                resolved.relative_to(self.home_dir)
+            except ValueError as exc:
+                raise PermissionError(
+                    'Access denied: path outside home directory'
+                ) from exc
 
-        # Re-verify security after case-insensitive resolution
-        try:
-            target.relative_to(self.home_dir)
-        except ValueError as exc:
-            raise PermissionError('Access denied: path outside home directory') from exc
-
-        return target
+        return resolved
 
     def resolve_path(self, path: str) -> Path:
         return self._resolve_path(path)
@@ -108,24 +109,26 @@ class UserFilesystem:
             raise NotADirectoryError(f'Not a directory: {path}')
 
         entries = []
-        for item in target.iterdir():
-            stat = item.stat()
-            modified = datetime.fromtimestamp(stat.st_mtime)
+        with os.scandir(target) as it:
+            for entry in it:
+                is_dir = entry.is_dir()
+                stat = entry.stat()
+                modified = datetime.fromtimestamp(stat.st_mtime)
+                name = entry.name
 
-            # DOS-style attributes
-            attrs = 'D' if item.is_dir() else ' '
-            attrs += 'R' if not os.access(item, os.W_OK) else ' '
-            attrs += 'H' if item.name.startswith('.') else ' '
+                attrs = 'D' if is_dir else ' '
+                attrs += 'R' if not os.access(entry.path, os.W_OK) else ' '
+                attrs += 'H' if name.startswith('.') else ' '
 
-            entries.append(
-                FileInfo(
-                    name=item.name,
-                    size=stat.st_size if item.is_file() else 0,
-                    is_dir=item.is_dir(),
-                    modified=modified,
-                    attributes=attrs,
+                entries.append(
+                    FileInfo(
+                        name=name,
+                        size=stat.st_size if not is_dir else 0,
+                        is_dir=is_dir,
+                        modified=modified,
+                        attributes=attrs,
+                    )
                 )
-            )
 
         return sorted(entries, key=lambda x: (not x.is_dir, x.name.upper()))
 
