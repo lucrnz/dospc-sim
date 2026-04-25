@@ -5,12 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
-@dataclass
+@dataclass(slots=True)
 class Argument:
     value: str
 
 
-@dataclass
+@dataclass(slots=True)
 class Switch:
     name: str
 
@@ -19,12 +19,12 @@ class Switch:
         return f'/{self.name}'
 
 
-@dataclass
+@dataclass(slots=True)
 class CommandName:
     name: str
 
 
-@dataclass
+@dataclass(slots=True)
 class SimpleCommand:
     name: CommandName
     args: list[Argument | Switch] = field(default_factory=list)
@@ -46,43 +46,43 @@ class SimpleCommand:
         return [a.value for a in self.args if isinstance(a, Argument)]
 
 
-@dataclass
+@dataclass(slots=True)
 class PipeCommand:
     commands: list[SimpleCommand]
 
 
-@dataclass
+@dataclass(slots=True)
 class EchoCommand:
     text: str | None = None
     on: bool | None = None
 
 
-@dataclass
+@dataclass(slots=True)
 class GotoCommand:
     label: str
 
 
-@dataclass
+@dataclass(slots=True)
 class CallCommand:
     target: SimpleCommand
 
 
-@dataclass
+@dataclass(slots=True)
 class PauseCommand:
     pass
 
 
-@dataclass
+@dataclass(slots=True)
 class IfExistCondition:
     filename: str
 
 
-@dataclass
+@dataclass(slots=True)
 class IfErrorlevelCondition:
     level: int
 
 
-@dataclass
+@dataclass(slots=True)
 class IfCompareCondition:
     left: str
     right: str
@@ -91,26 +91,26 @@ class IfCompareCondition:
 IfCondition = IfExistCondition | IfErrorlevelCondition | IfCompareCondition
 
 
-@dataclass
+@dataclass(slots=True)
 class IfCommand:
     negated: bool
     condition: IfCondition
     command: CommandLine
 
 
-@dataclass
+@dataclass(slots=True)
 class ForCommand:
     var: str
     items: list[str]
     command: CommandLine
 
 
-@dataclass
+@dataclass(slots=True)
 class Label:
     name: str
 
 
-@dataclass
+@dataclass(slots=True)
 class CommandLine:
     command: (
         SimpleCommand
@@ -128,7 +128,7 @@ class CommandLine:
     append_redirect: str | None = None
 
 
-@dataclass
+@dataclass(slots=True)
 class BatchProgram:
     lines: list[CommandLine]
 

@@ -167,7 +167,9 @@ The AST node classes (`CommandLine`, `SimpleCommand`, `Argument`, `Switch`, `Com
 **Files:** `src/dospc_sim/parser_ast.py`
 **Estimated impact:** All benchmarks; reduces allocation overhead on every parse.
 
-Status: Todo
+Benchmark data: Pre: Batch 2698 ops/s, CALL 8325 ops/s, ECHO 103104 ops/s → Post: Batch 2754 ops/s, CALL 8556 ops/s, ECHO 102385 ops/s. Improvement (Batch +2%, CALL +3%).
+
+Status: Done
 
 ---
 
@@ -178,7 +180,9 @@ The inner function `_replace` inside `expand_variables` captures `self.environme
 **Files:** `src/dospc_sim/dos_shell.py`
 **Estimated impact:** Minor; reduces allocation on every command/batch line.
 
-Status: Todo
+Benchmark data: Already addressed in Task 5 — the _replace closure was converted to a bound method _env_var_replace.
+
+Status: Done
 
 ---
 
