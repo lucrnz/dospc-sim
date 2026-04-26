@@ -134,9 +134,9 @@ class SSHInteractiveSession:
                         index += 1
                         if len(seq) == 2 and seq[1] in (0x4F, 0x5B):
                             continue
-                        seq_done = (
-                            len(seq) >= 3 and chr(seq[-1]).isalpha()
-                        ) or seq[-1] == ord('~')
+                        seq_done = (len(seq) >= 3 and chr(seq[-1]).isalpha()) or seq[
+                            -1
+                        ] == ord('~')
                         if seq_done:
                             break
             except Exception:
@@ -186,7 +186,7 @@ class SSHInteractiveSession:
                 self.command_buffer[: self.cursor_pos]
                 + self.command_buffer[self.cursor_pos + 1 :]
             )
-            self.channel.send(self.command_buffer[self.cursor_pos:] + ' ')
+            self.channel.send(self.command_buffer[self.cursor_pos :] + ' ')
             self.channel.send(f'\x1b[{len(self.command_buffer) - self.cursor_pos + 1}D')
 
     def _handle_enter(self, raw: bytes, index: int) -> int:
@@ -213,7 +213,7 @@ class SSHInteractiveSession:
                 + self.command_buffer[self.cursor_pos :]
             )
             self.cursor_pos -= 1
-            self.channel.send('\b' + self.command_buffer[self.cursor_pos:] + ' ')
+            self.channel.send('\b' + self.command_buffer[self.cursor_pos :] + ' ')
             move_back = len(self.command_buffer) - self.cursor_pos + 1
             self.channel.send(f'\x1b[{move_back}D')
 
@@ -253,7 +253,7 @@ class SSHInteractiveSession:
             + self.command_buffer[self.cursor_pos :]
         )
         self.cursor_pos += 1
-        self.channel.send(ch + self.command_buffer[self.cursor_pos:])
+        self.channel.send(ch + self.command_buffer[self.cursor_pos :])
         if len(self.command_buffer) - self.cursor_pos > 0:
             self.channel.send(f'\x1b[{len(self.command_buffer) - self.cursor_pos}D')
 

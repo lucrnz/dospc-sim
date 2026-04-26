@@ -246,9 +246,7 @@ def _build_benchmark_cases(shell: DOSShell) -> list[BenchmarkCase]:
         BenchmarkCase('ECHO', _noop, run('ECHO hello'), _noop, _noop),
         BenchmarkCase('CLS', _noop, run('CLS'), _noop, _noop),
         BenchmarkCase('Pipes', _noop, run(pipe_cmd), _noop, _noop),
-        BenchmarkCase(
-            'Echo pipe', _noop, run('ECHO hello | FIND hello'), _noop, _noop
-        ),
+        BenchmarkCase('Echo pipe', _noop, run('ECHO hello | FIND hello'), _noop, _noop),
         BenchmarkCase(
             'Redirect >',
             remove_outfile,

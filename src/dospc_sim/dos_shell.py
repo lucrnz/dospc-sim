@@ -112,9 +112,7 @@ class _BatchExecutor:
                 ):
                     line_index.append(None)
                 else:
-                    label_match = re.match(
-                        r'^:([A-Za-z_][A-Za-z0-9_]*)\s*$', stripped
-                    )
+                    label_match = re.match(r'^:([A-Za-z_][A-Za-z0-9_]*)\s*$', stripped)
                     if label_match:
                         labels[label_match.group(1).upper()] = len(line_index)
                         line_index.append(None)
@@ -145,9 +143,7 @@ class _BatchExecutor:
                     expanded, parsed = entry
 
                 if self.shell._echo_on and not isinstance(parsed.command, Label):
-                    self.shell._output_line(
-                        f'{self.shell.get_prompt()}{expanded}'
-                    )
+                    self.shell._output_line(f'{self.shell.get_prompt()}{expanded}')
 
                 try:
                     self.shell._execute_parsed(parsed)
@@ -439,9 +435,7 @@ class DOSShell(DOSShellCommandProvider):
         if isinstance(ast, PipeCommand):
             parts = []
             for cmd in ast.commands:
-                parts.append(
-                    self._ast_to_raw(CommandLine(command=cmd))
-                )
+                parts.append(self._ast_to_raw(CommandLine(command=cmd)))
             return ' | '.join(parts)
         if isinstance(ast, ForCommand):
             items_str = ' '.join(ast.items)
