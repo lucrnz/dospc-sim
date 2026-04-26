@@ -144,7 +144,16 @@ class FileSystemCommandGroup:
                 self._output_line(
                     f' Volume in drive {self.fs.drive_letter} is DOSPC-SIM'
                 )
-                self._output_line(f' Directory of {self.fs.get_current_path()}')
+                resolved = self.fs.resolve_path(path)
+                try:
+                    rel = resolved.relative_to(self.fs.home_dir)
+                    if str(rel) == '.':
+                        dir_display = f'{self.fs.drive_letter}:\\'
+                    else:
+                        dir_display = f'{self.fs.drive_letter}:\\{str(rel).replace("/", "\\")}'
+                except ValueError:
+                    dir_display = self.fs.get_current_path()
+                self._output_line(f' Directory of {dir_display}')
                 self._output_line()
                 total_files = 0
                 total_dirs = 0

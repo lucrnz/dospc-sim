@@ -89,7 +89,9 @@ After `session.run()` ends, `_setup_shell` unconditionally calls `channel.send(.
 **Files:** `src/dospc_sim/ssh_server.py`
 **Impact:** Noise — spurious error logs on normal disconnects.
 
-Status: Todo
+Benchmark data: Pre: N/A (SSH not benchmarked) | Post: N/A | Delta: noise
+
+Status: Done
 
 ---
 
@@ -100,7 +102,9 @@ Status: Todo
 **Files:** `src/dospc_sim/shell_commands.py`
 **Impact:** Cosmetic/Functional — misleading output for non-current directory listings.
 
-Status: Todo
+Benchmark data: Pre: DIR 6878 ops/s | Post: DIR 6036 ops/s | Delta: noise
+
+Status: Done
 
 ---
 
@@ -146,7 +150,9 @@ After `session.run()` returns, `_setup_shell` calls `channel.send("\r\nGoodbye!\
 **Files:** `src/dospc_sim/ssh_server.py`
 **Impact:** Noise — spurious error logs on normal disconnects.
 
-Status: Todo
+Duplicate of bug 7, fixed there.
+
+Status: Done
 
 ---
 
@@ -157,7 +163,9 @@ The `DIR` header always uses `self.fs.get_current_path()`, so the header is wron
 **Files:** `src/dospc_sim/shell_commands.py`
 **Impact:** Cosmetic — confusing output for `DIR` on other directories.
 
-Status: Todo
+Duplicate of bug 8, fixed there.
+
+Status: Done
 
 ---
 

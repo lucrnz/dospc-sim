@@ -383,7 +383,10 @@ class SSHClientHandler(threading.Thread):
             logger.error(f'Error in shell for {user.username}: {e}')
 
         logger.info(f'Session ended for user {user.username} from {self.address[0]}')
-        channel.send('\r\nGoodbye!\r\n')
+        try:
+            channel.send('\r\nGoodbye!\r\n')
+        except Exception:
+            pass
 
     @staticmethod
     def _tab_complete(
