@@ -96,3 +96,19 @@ class TestDOSShellRedirection:
         assert shell.fs.file_exists('copy.txt')
         content = shell.fs.read_file('copy.txt')
         assert 'original content' in content
+
+    # ==================== ECHO in pipe regression (bug 4) ===============
+
+    def test_echo_pipe_find(self, shell):
+        """ECHO must work as the left side of a pipe (bug 4)."""
+        shell._output_capture.clear()
+        shell.execute_command('ECHO hello world | FIND hello')
+        output = '\n'.join(shell._output_capture)
+        assert 'hello world' in output
+
+    def test_echo_pipe_sort(self, shell):
+        """ECHO piped to SORT must produce output."""
+        shell._output_capture.clear()
+        shell.execute_command('ECHO banana | SORT')
+        output = '\n'.join(shell._output_capture)
+        assert 'banana' in output

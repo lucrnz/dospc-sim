@@ -76,6 +76,15 @@ class TestDOSShellCommands:
         assert 'file1.txt' in output
         assert 'file2.log' not in output
 
+    def test_cmd_dir_header_shows_listed_path(self, shell):
+        """DIR header must show the listed directory, not cwd (bug 8)."""
+        shell.fs.make_directory('subdir')
+        shell.fs.write_file('subdir/file.txt', 'data')
+        shell._output_capture.clear()
+        shell.cmd_dir(['subdir'])
+        output = '\n'.join(shell._output_capture)
+        assert 'Directory of C:\\subdir' in output
+
     def test_cmd_cd(self, shell):
         """Test CD command."""
         shell.fs.make_directory('subdir')
@@ -254,6 +263,19 @@ class TestDOSShellCommands:
         assert not shell.fs.file_exists('file2.txt')
         assert shell.fs.file_exists('file3.log')
 
+    def test_cmd_del_wildcard_with_directory(self, shell):
+        """DEL with directory prefix must delete from that directory (bug 5)."""
+        shell.fs.make_directory('subdir')
+        shell.fs.write_file('subdir/a.txt', 'a')
+        shell.fs.write_file('subdir/b.txt', 'b')
+        shell.fs.write_file('subdir/c.log', 'c')
+
+        result = shell.cmd_del(['subdir\\*.txt'])
+        assert result == 0
+        assert not shell.fs.file_exists('subdir/a.txt')
+        assert not shell.fs.file_exists('subdir/b.txt')
+        assert shell.fs.file_exists('subdir/c.log')
+
     def test_cmd_ren(self, shell):
         """Test REN command."""
         shell.fs.write_file('oldname.txt', 'content')
@@ -383,6 +405,14 @@ class TestDOSShellCommands:
         assert result == 0
         assert 'PATH=' in output
         assert 'PROMPT=' in output
+
+    def test_cmd_set_undefined_variable(self, shell):
+        """SET with undefined variable must print error message (bug 9)."""
+        shell._output_capture.clear()
+        result = shell.cmd_set(['NONEXISTENT'])
+        output = '\n'.join(shell._output_capture)
+        assert result == 1
+        assert 'not defined' in output
 
     def test_cmd_path(self, shell):
         """Test PATH command."""

@@ -244,18 +244,38 @@ class TestTextEditor:
         assert editor.filename == 'newname.txt'
         assert filesystem.file_exists('newname.txt')
 
-    def test_quit_without_saving(self, filesystem, mock_output, mock_input_sequence):
-        """Test quitting without saving modified file."""
+    def test_quit_unsaved_warns_first(
+        self, filesystem, mock_output, mock_input_sequence
+    ):
+        """Test first quit with unsaved changes warns but does not exit."""
         input_fn = mock_input_sequence(['\x03'])
         editor = TextEditor(filesystem, mock_output, input_fn)
+        editor.running = True
 
         editor.open_file('test.txt')
         editor.lines = ['modified']
         editor.modified = True
 
-        # First quit attempt should warn
         editor._quit()
-        assert editor.running is False  # Currently quits immediately on first attempt
+        assert editor.running is True
+        assert 'Unsaved changes' in editor.status_message
+
+    def test_quit_unsaved_exits_on_second(
+        self, filesystem, mock_output, mock_input_sequence
+    ):
+        """Test second quit with unsaved changes exits."""
+        input_fn = mock_input_sequence(['\x03'])
+        editor = TextEditor(filesystem, mock_output, input_fn)
+        editor.running = True
+
+        editor.open_file('test.txt')
+        editor.lines = ['modified']
+        editor.modified = True
+
+        editor._quit()
+        assert editor.running is True
+        editor._quit()
+        assert editor.running is False
 
 
 class TestEditorIntegration:

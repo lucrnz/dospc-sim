@@ -426,3 +426,25 @@ FOR %%I IN (x y z) DO ECHO %%I"""
         output = '\n'.join(shell._output_capture)
         assert 'Found a.txt' in output
         assert 'Found b.txt' in output
+
+    # ==================== FOR body with pipes regression (bug 3) =========
+
+    def test_for_loop_body_with_pipe(self, shell):
+        """FOR loop body containing a pipe must execute, not produce empty string."""
+        shell.fs.write_file('a.txt', 'hello\nworld')
+        shell.fs.write_file('b.txt', 'foo\nbar')
+        batch = 'FOR %%F IN (a.txt b.txt) DO TYPE %%F | FIND hello'
+        shell.fs.write_file('test.bat', batch)
+        shell._output_capture.clear()
+        shell.execute_command('TEST')
+        output = '\n'.join(shell._output_capture)
+        assert 'hello' in output
+
+    def test_for_loop_body_with_nested_for(self, shell):
+        """FOR loop body containing another FOR must execute."""
+        batch = 'FOR %%X IN (a b) DO FOR %%Y IN (1 2) DO ECHO %%X %%Y'
+        shell.fs.write_file('test.bat', batch)
+        shell._output_capture.clear()
+        shell.execute_command('TEST')
+        output = '\n'.join(shell._output_capture)
+        assert 'a' in output

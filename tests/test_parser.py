@@ -181,6 +181,16 @@ class TestPipeParsing:
         assert r.command.commands[0].command == 'TYPE'
         assert r.command.commands[1].command == 'FIND'
 
+    def test_pipe_with_echo(self):
+        """ECHO must be allowed as a pipeable command (bug 4)."""
+        r = parse_command('ECHO hello | FIND hello')
+        assert r is not None
+        assert isinstance(r.command, PipeCommand)
+        assert isinstance(r.command.commands[0], EchoCommand)
+        assert r.command.commands[0].text == 'hello'
+        assert isinstance(r.command.commands[1], SimpleCommand)
+        assert r.command.commands[1].command == 'FIND'
+
 
 class TestBatchControlParsing:
     def test_goto_command(self):
