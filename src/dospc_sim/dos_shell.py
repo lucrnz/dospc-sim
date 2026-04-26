@@ -7,12 +7,14 @@ from datetime import datetime
 from dospc_sim.filesystem import UserFilesystem
 from dospc_sim.parser import (
     CallCommand,
+    ChainCommand,
     CommandLine,
     EchoCommand,
     ForCommand,
     GotoCommand,
     IfCommand,
     IfCompareCondition,
+    IfDefinedCondition,
     IfErrorlevelCondition,
     IfExistCondition,
     Label,
@@ -100,9 +102,10 @@ class _BatchExecutor:
 
             raw_lines = content.splitlines()
             labels: dict[str, int] = {}
-            # Each entry is None (skip), a (raw, CommandLine) pre-parsed
-            # tuple, or a raw string needing variable expansion at runtime.
-            line_index: list[tuple[str, CommandLine] | str | None] = []
+            # Each entry is None (skip), a (raw, CommandLine, suppress)
+            # pre-parsed tuple, or a raw string needing variable expansion
+            # at runtime.
+            line_index: list[tuple[str, CommandLine, bool] | str | None] = []
             for raw in raw_lines:
                 stripped = raw.strip()
                 if (
@@ -112,17 +115,22 @@ class _BatchExecutor:
                 ):
                     line_index.append(None)
                 else:
+                    suppress_at = stripped.startswith('@')
+                    if suppress_at:
+                        stripped = stripped[1:]
                     label_match = re.match(r'^:([A-Za-z_][A-Za-z0-9_]*)\s*$', stripped)
                     if label_match:
                         labels[label_match.group(1).upper()] = len(line_index)
                         line_index.append(None)
                         continue
                     if '%' in stripped:
+                        if suppress_at:
+                            stripped = '@' + stripped
                         line_index.append(stripped)
                     else:
                         parsed = parse_command(stripped)
                         if parsed is not None:
-                            line_index.append((stripped, parsed))
+                            line_index.append((stripped, parsed, suppress_at))
                         else:
                             line_index.append(None)
 
@@ -135,14 +143,21 @@ class _BatchExecutor:
                     continue
 
                 if isinstance(entry, str):
+                    suppress_echo = entry.startswith('@')
+                    if suppress_echo:
+                        entry = entry[1:]
                     expanded = self.shell.expand_variables(entry)
                     parsed = parse_command(expanded)
                     if parsed is None:
                         continue
                 else:
-                    expanded, parsed = entry
+                    expanded, parsed, suppress_echo = entry
 
-                if self.shell._echo_on and not isinstance(parsed.command, Label):
+                if (
+                    self.shell._echo_on
+                    and not suppress_echo
+                    and not isinstance(parsed.command, Label)
+                ):
                     self.shell._output_line(f'{self.shell.get_prompt()}{expanded}')
 
                 try:
@@ -286,6 +301,8 @@ class DOSShell(DOSShellCommandProvider):
             return self._execute_if(ast)
         if isinstance(ast, ForCommand):
             return self._execute_for(ast)
+        if isinstance(ast, ChainCommand):
+            return self._execute_chain(ast)
         if isinstance(ast, Label):
             return 0
         return 0
@@ -373,6 +390,8 @@ class DOSShell(DOSShellCommandProvider):
             )
         elif isinstance(cond, IfErrorlevelCondition):
             condition_met = self.last_errorlevel >= cond.level
+        elif isinstance(cond, IfDefinedCondition):
+            condition_met = cond.variable in self.environment
         elif isinstance(cond, IfCompareCondition):
             condition_met = cond.left.upper() == cond.right.upper()
 
@@ -381,6 +400,8 @@ class DOSShell(DOSShellCommandProvider):
 
         if condition_met:
             return self._execute_parsed(if_cmd.command)
+        elif if_cmd.else_command is not None:
+            return self._execute_parsed(if_cmd.else_command)
         return 0
 
     def _execute_for(self, for_cmd: ForCommand) -> int:
@@ -396,6 +417,18 @@ class DOSShell(DOSShellCommandProvider):
             )
             result = self.execute_command(expanded)
         return result
+
+    def _execute_chain(self, chain: ChainCommand) -> int:
+        left_result = self._execute_parsed(chain.left)
+        self.last_errorlevel = left_result
+        if chain.operator == '&&':
+            if left_result == 0:
+                return self._execute_parsed(chain.right)
+            return left_result
+        # ||
+        if left_result != 0:
+            return self._execute_parsed(chain.right)
+        return left_result
 
     def _ast_to_raw(self, cl: CommandLine) -> str:
         """Reconstruct a raw command string from a CommandLine AST node."""
@@ -423,10 +456,15 @@ class DOSShell(DOSShellCommandProvider):
                 parts.append(f'EXIST {cond.filename}')
             elif isinstance(cond, IfErrorlevelCondition):
                 parts.append(f'ERRORLEVEL {cond.level}')
+            elif isinstance(cond, IfDefinedCondition):
+                parts.append(f'DEFINED {cond.variable}')
             elif isinstance(cond, IfCompareCondition):
                 parts.append(f'{cond.left}=={cond.right}')
             if ast.command:
                 parts.append(self._ast_to_raw(ast.command))
+            if ast.else_command:
+                parts.append('ELSE')
+                parts.append(self._ast_to_raw(ast.else_command))
             return ' '.join(parts)
         if isinstance(ast, PauseCommand):
             return 'PAUSE'
@@ -441,6 +479,10 @@ class DOSShell(DOSShellCommandProvider):
             items_str = ' '.join(ast.items)
             body = self._ast_to_raw(ast.command) if ast.command else ''
             return f'FOR %%{ast.var} IN ({items_str}) DO {body}'
+        if isinstance(ast, ChainCommand):
+            left = self._ast_to_raw(ast.left)
+            right = self._ast_to_raw(ast.right)
+            return f'{left} {ast.operator} {right}'
         return ''
 
     def _find_batch_file(self, name: str) -> str | None:

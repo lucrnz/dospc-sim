@@ -36,8 +36,8 @@ This document details the DOS command compatibility status for the SSH DOS Envir
 | `SET` | ✅ Fully Implemented | Environment variables | Display/set environment variables |
 | `PROMPT` | ✅ Fully Implemented | Change prompt | Supports `$P`, `$G`, `$L`, `$D`, `$T`, `$N`, `$$` meta-characters |
 | `PATH` | ✅ Fully Implemented | Display/set path | View or modify search path |
-| `DATE` | ⚠️ Partially Implemented | Display date | Shows current date - Setting time not planned |
-| `TIME` | ⚠️ Partially Implemented | Display time | Shows current time - Setting time not planned |
+| `DATE` | ✅ Fully Implemented | Display date | Shows current date (setting date not planned) |
+| `TIME` | ✅ Fully Implemented | Display time | Shows current time (setting time not planned) |
 
 ### I/O Redirection and Pipes
 
@@ -47,6 +47,8 @@ This document details the DOS command compatibility status for the SSH DOS Envir
 | Output Redirect (`>`) | ✅ Fully Implemented | Redirect output to file | Overwrites target file |
 | Append Redirect (`>>`) | ✅ Fully Implemented | Append output to file | Appends to existing content |
 | Input Redirect (`<`) | ✅ Fully Implemented | Redirect input from file | Reads file as stdin |
+| Command chain (`&&`) | ✅ Fully Implemented | Run next command if previous succeeded | WinNT extension (not available in original DOS) |
+| Command chain (`\|\|`) | ✅ Fully Implemented | Run next command if previous failed | WinNT extension (not available in original DOS) |
 
 ### Batch File Support
 
@@ -61,13 +63,13 @@ This document details the DOS command compatibility status for the SSH DOS Envir
 | Labels (`:LABEL`) | ✅ Fully Implemented | Label lines for GOTO targets | |
 | `GOTO` | ✅ Fully Implemented | Jump to label | Supports forward and backward jumps |
 | `CALL` | ✅ Fully Implemented | Call another batch file | Supports passing arguments |
-| `IF` | ✅ Fully Implemented | Conditional execution | Supports `EXIST` (files and directories), `ERRORLEVEL`, string comparison (`==`), and `NOT` |
+| `IF` | ✅ Fully Implemented | Conditional execution | Supports `EXIST` (files and directories), `ERRORLEVEL`, string comparison (`==`), `DEFINED`, `NOT`, and `ELSE` |
 | `FOR` | ✅ Fully Implemented | Loop construct | Supports `%%var IN (set) DO command`; variable substitution works with any case (`%%F`, `%%f`) |
 | `PAUSE` | ✅ Fully Implemented | Pause execution | Displays "Press any key to continue . . . " |
 | `ECHO OFF` | ✅ Fully Implemented | Command echo suppression | Toggle works; batch commands are echoed when ECHO is ON (default) and suppressed when ECHO is OFF |
-| `@` Prefix | ❌ Not Implemented | Suppress echo for single line | |
-| `IF DEFINED` | ❌ Not Implemented | Check if variable is defined | |
-| `IF` / `ELSE` | ❌ Not Implemented | Else clause for conditionals | |
+| `@` Prefix | ✅ Fully Implemented | Suppress echo for single line | Prevents command echo for the prefixed line only |
+| `IF DEFINED` | ✅ Fully Implemented | Check if variable is defined | Supports `NOT` modifier; variable names are case-insensitive |
+| `IF` / `ELSE` | ✅ Fully Implemented | Else clause for conditionals | Works with all IF condition types (`EXIST`, `ERRORLEVEL`, string comparison, `DEFINED`) |
 
 ## Command Details
 
@@ -96,7 +98,7 @@ This document details the DOS command compatibility status for the SSH DOS Envir
 **Syntax:** `COPY source destination`
 
 **Notes:**
-- Single file copy only
+- Single file and wildcard (`*`, `?`) copy supported
 - Supports relative and absolute paths
 - Automatically handles directory destinations
 
@@ -150,9 +152,10 @@ This document details the DOS command compatibility status for the SSH DOS Envir
 ### IF Command (Batch)
 
 **Syntax:**
-- `IF [NOT] EXIST name command` (checks files and directories)
-- `IF [NOT] ERRORLEVEL number command`
-- `IF [NOT] string1==string2 command`
+- `IF [NOT] EXIST name command [ELSE command]` (checks files and directories)
+- `IF [NOT] ERRORLEVEL number command [ELSE command]`
+- `IF [NOT] string1==string2 command [ELSE command]`
+- `IF [NOT] DEFINED variable command [ELSE command]`
 
 ### FOR Command (Batch)
 
@@ -198,20 +201,7 @@ The following environment variables are available:
 
 ### Not Implemented
 
-1. **Command chaining (`&&`, `||`)**: Multiple command execution is not supported
-2. **Background execution (`&`)**: Not applicable in this environment
-3. **`@` prefix**: Suppressing echo for a single batch line is not supported
-4. **`IF DEFINED`**: Checking if a variable is defined is not supported
-5. **`IF` / `ELSE`**: Else clause for conditionals is not supported
-
-### Partial Implementations
-
-1. ~~**Batch ECHO**: Resolved — `ECHO ON/OFF` toggle now correctly controls whether batch commands are echoed during execution~~
-2. ~~**Wildcards**: Resolved — DEL, COPY, and DIR all support wildcard patterns (`*`, `?`)~~
-3. ~~**RD `/Q` behavior**: Resolved~~
-4. ~~**FC `/N` behavior**: Resolved~~
-5. ~~**Batch invocation by extension**: Resolved — both basename and explicit extension invocation now work~~
-6. ~~**FOR variable case handling**: Resolved~~
+1. **Background execution (`&`)**: Not applicable in this environment
 
 ## Interactive Shell Features
 
@@ -253,7 +243,5 @@ Stdin and file batch execution paths both use the same parser+AST execution runt
 
 Planned features for future releases:
 
-- [ ] Batch `@` prefix for single-line echo suppression
-- [ ] `IF DEFINED` and `IF` / `ELSE` support
 - [ ] Additional commands: ATTRIB, XCOPY, DOSKEY
 - [ ] Network drive simulation (NET USE)

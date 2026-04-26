@@ -4,6 +4,7 @@ from dospc_sim.parser import (
     Argument,
     BatchProgram,
     CallCommand,
+    ChainCommand,
     CommandLine,
     CommandName,
     EchoCommand,
@@ -11,6 +12,7 @@ from dospc_sim.parser import (
     GotoCommand,
     IfCommand,
     IfCompareCondition,
+    IfDefinedCondition,
     IfErrorlevelCondition,
     IfExistCondition,
     Label,
@@ -254,8 +256,162 @@ class TestBatchControlParsing:
         assert isinstance(r.command, Label)
         assert r.command.name == 'LOOP_HERE'
 
+    def test_if_defined_command(self):
+        r = parse_command('IF DEFINED PATH ECHO yes')
+        assert r is not None
+        assert isinstance(r.command, IfCommand)
+        assert isinstance(r.command.condition, IfDefinedCondition)
+        assert r.command.condition.variable == 'PATH'
+        assert isinstance(r.command.command.command, EchoCommand)
+        assert r.command.command.command.text == 'yes'
+
+    def test_if_not_defined_command(self):
+        r = parse_command('IF NOT DEFINED MISSING ECHO no')
+        assert r is not None
+        assert isinstance(r.command, IfCommand)
+        assert r.command.negated is True
+        assert isinstance(r.command.condition, IfDefinedCondition)
+        assert r.command.condition.variable == 'MISSING'
+
+    def test_if_defined_case_insensitive(self):
+        r = parse_command('if defined myvar echo found')
+        assert r is not None
+        assert isinstance(r.command.condition, IfDefinedCondition)
+        assert r.command.condition.variable == 'MYVAR'
+
+    def test_if_else_command(self):
+        r = parse_command('IF EXIST test.txt ECHO yes ELSE ECHO no')
+        assert r is not None
+        assert isinstance(r.command, IfCommand)
+        assert isinstance(r.command.condition, IfExistCondition)
+        assert r.command.command.command.text == 'yes'
+        assert r.command.else_command is not None
+        assert isinstance(r.command.else_command.command, EchoCommand)
+        assert r.command.else_command.command.text == 'no'
+
+    def test_if_else_no_else(self):
+        r = parse_command('IF EXIST test.txt ECHO yes')
+        assert r is not None
+        assert isinstance(r.command, IfCommand)
+        assert r.command.else_command is None
+
+    def test_if_not_else_command(self):
+        r = parse_command('IF NOT EXIST test.txt ECHO missing ELSE ECHO found')
+        assert r is not None
+        assert isinstance(r.command, IfCommand)
+        assert r.command.negated is True
+        assert r.command.command.command.text == 'missing'
+        assert r.command.else_command is not None
+        assert r.command.else_command.command.text == 'found'
+
+    def test_if_compare_else(self):
+        r = parse_command('IF a==b ECHO match ELSE ECHO nomatch')
+        assert r is not None
+        assert isinstance(r.command, IfCommand)
+        assert isinstance(r.command.condition, IfCompareCondition)
+        assert r.command.command.command.text == 'match'
+        assert r.command.else_command.command.text == 'nomatch'
+
+    def test_if_errorlevel_else(self):
+        r = parse_command('IF ERRORLEVEL 1 ECHO fail ELSE ECHO ok')
+        assert r is not None
+        assert isinstance(r.command, IfCommand)
+        assert r.command.command.command.text == 'fail'
+        assert r.command.else_command.command.text == 'ok'
+
+    def test_if_defined_else(self):
+        r = parse_command('IF DEFINED VAR ECHO yes ELSE ECHO no')
+        assert r is not None
+        assert isinstance(r.command, IfCommand)
+        assert isinstance(r.command.condition, IfDefinedCondition)
+        assert r.command.command.command.text == 'yes'
+        assert r.command.else_command.command.text == 'no'
+
+    def test_if_else_with_goto(self):
+        r = parse_command('IF 1==1 GOTO WIN ELSE GOTO LOSE')
+        assert r is not None
+        assert isinstance(r.command.command.command, GotoCommand)
+        assert r.command.command.command.label == 'WIN'
+        assert isinstance(r.command.else_command.command, GotoCommand)
+        assert r.command.else_command.command.label == 'LOSE'
+
     def test_comment_with_bare_rem(self):
         assert parse_command('REM') is None
+
+
+class TestChainParsing:
+    def test_and_then_two_commands(self):
+        r = parse_command('ECHO hello && ECHO world')
+        assert r is not None
+        assert isinstance(r.command, ChainCommand)
+        assert r.command.operator == '&&'
+        assert isinstance(r.command.left.command, EchoCommand)
+        assert r.command.left.command.text == 'hello'
+        assert isinstance(r.command.right.command, EchoCommand)
+        assert r.command.right.command.text == 'world'
+
+    def test_or_else_two_commands(self):
+        r = parse_command('DIR missing || ECHO fallback')
+        assert r is not None
+        assert isinstance(r.command, ChainCommand)
+        assert r.command.operator == '||'
+        assert isinstance(r.command.left.command, SimpleCommand)
+        assert r.command.left.command.command == 'DIR'
+        assert isinstance(r.command.right.command, EchoCommand)
+        assert r.command.right.command.text == 'fallback'
+
+    def test_triple_chain(self):
+        r = parse_command('ECHO a && ECHO b && ECHO c')
+        assert r is not None
+        assert isinstance(r.command, ChainCommand)
+        # Left-associative: ((a && b) && c)
+        assert r.command.operator == '&&'
+        left = r.command.left.command
+        assert isinstance(left, ChainCommand)
+        assert left.operator == '&&'
+        assert isinstance(left.left.command, EchoCommand)
+        assert left.left.command.text == 'a'
+        assert isinstance(left.right.command, EchoCommand)
+        assert left.right.command.text == 'b'
+        assert isinstance(r.command.right.command, EchoCommand)
+        assert r.command.right.command.text == 'c'
+
+    def test_mixed_and_or_chain(self):
+        r = parse_command('ECHO a && ECHO b || ECHO c')
+        assert r is not None
+        assert isinstance(r.command, ChainCommand)
+        assert r.command.operator == '||'
+        left = r.command.left.command
+        assert isinstance(left, ChainCommand)
+        assert left.operator == '&&'
+
+    def test_chain_with_pipe(self):
+        r = parse_command('DIR | SORT && ECHO done')
+        assert r is not None
+        assert isinstance(r.command, ChainCommand)
+        assert r.command.operator == '&&'
+        assert isinstance(r.command.left.command, PipeCommand)
+        assert isinstance(r.command.right.command, EchoCommand)
+
+    def test_chain_with_simple_args(self):
+        r = parse_command('COPY a.txt b.txt && ECHO copied')
+        assert r is not None
+        assert isinstance(r.command, ChainCommand)
+        assert r.command.left.command.command == 'COPY'
+        assert r.command.left.command.positional_args == ['a.txt', 'b.txt']
+        assert r.command.right.command.text == 'copied'
+
+    def test_no_chain_returns_normal(self):
+        r = parse_command('ECHO hello')
+        assert r is not None
+        assert isinstance(r.command, EchoCommand)
+
+    def test_chain_preserves_quotes(self):
+        r = parse_command('ECHO "hello world" && ECHO "goodbye"')
+        assert r is not None
+        assert isinstance(r.command, ChainCommand)
+        assert r.command.left.command.text == 'hello world'
+        assert r.command.right.command.text == 'goodbye'
 
 
 class TestBatchParsing:

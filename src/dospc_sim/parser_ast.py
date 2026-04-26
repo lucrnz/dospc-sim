@@ -88,7 +88,14 @@ class IfCompareCondition:
     right: str
 
 
-IfCondition = IfExistCondition | IfErrorlevelCondition | IfCompareCondition
+@dataclass(slots=True)
+class IfDefinedCondition:
+    variable: str
+
+
+IfCondition = (
+    IfExistCondition | IfErrorlevelCondition | IfCompareCondition | IfDefinedCondition
+)
 
 
 @dataclass(slots=True)
@@ -96,6 +103,7 @@ class IfCommand:
     negated: bool
     condition: IfCondition
     command: CommandLine
+    else_command: CommandLine | None = None
 
 
 @dataclass(slots=True)
@@ -103,6 +111,15 @@ class ForCommand:
     var: str
     items: list[str]
     command: CommandLine
+
+
+@dataclass(slots=True)
+class ChainCommand:
+    """Represents command chaining with && (and_then) or || (or_else)."""
+
+    left: CommandLine
+    operator: str  # '&&' or '||'
+    right: CommandLine
 
 
 @dataclass(slots=True)
@@ -121,6 +138,7 @@ class CommandLine:
         | PauseCommand
         | IfCommand
         | ForCommand
+        | ChainCommand
         | Label
     )
     stdin_redirect: str | None = None

@@ -72,6 +72,8 @@ SHELL_COMMAND_HELP_TEXTS: dict[str, str] = {
         '\n\nIF [NOT] ERRORLEVEL number command'
         '\nIF [NOT] string1==string2 command'
         '\nIF [NOT] EXIST filename command'
+        '\nIF [NOT] DEFINED variable command'
+        '\nIF condition command ELSE command'
     ),
     'MD': 'Creates a directory.',
     'MKDIR': 'Creates a directory.',

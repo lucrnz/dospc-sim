@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import re
+
 from lark import Lark, Token, Transformer, v_args
 
 from dospc_sim.parser_ast import (
     Argument,
     BatchProgram,
     CallCommand,
+    ChainCommand,
     CommandLine,
     CommandName,
     EchoCommand,
@@ -15,6 +18,7 @@ from dospc_sim.parser_ast import (
     GotoCommand,
     IfCommand,
     IfCompareCondition,
+    IfDefinedCondition,
     IfErrorlevelCondition,
     IfExistCondition,
     Label,
@@ -62,6 +66,7 @@ comment: COMMENT
 
 if_condition: "EXIST"i WORD        -> if_exist_condition
             | "ERRORLEVEL"i NUMBER -> if_errorlevel_condition
+            | "DEFINED"i WORD      -> if_defined_condition
             | COMPARE_EXPR          -> if_compare_condition
 
 for_items: WORD+
@@ -238,6 +243,10 @@ class _DOSTransformer(Transformer):
         return IfErrorlevelCondition(level=int(level))
 
     @v_args(inline=True)
+    def if_defined_condition(self, varname):
+        return IfDefinedCondition(variable=str(varname).upper())
+
+    @v_args(inline=True)
     def if_compare_condition(self, expr):
         left, right = _split_compare_expr(str(expr))
         return IfCompareCondition(left=left, right=right)
@@ -288,12 +297,115 @@ def _parse_via_lark(line: str) -> CommandLine | None:
 # ---------------------------------------------------------------------------
 
 
+_CHAIN_RE = re.compile(r'&&|\|\|')
+_ELSE_RE = re.compile(r'\bELSE\b', re.IGNORECASE)
+
+
+def _split_if_else(line: str) -> tuple[str, str | None]:
+    """Split an IF...ELSE line into the IF part and the ELSE command.
+
+    Only splits when the line starts with IF (possibly preceded by NOT).
+    Finds the ELSE keyword that separates the then-command from the
+    else-command.
+    """
+    upper = line.lstrip().upper()
+    if not upper.startswith('IF '):
+        return line, None
+
+    for m in _ELSE_RE.finditer(line):
+        pos = m.start()
+        if_part = line[:pos].rstrip()
+        else_part = line[pos + 4 :].lstrip()
+        # Validate: the IF part must parse as a valid IfCommand
+        try:
+            result = _parse_via_lark(if_part)
+        except Exception:
+            continue
+        if result is not None and isinstance(result.command, IfCommand):
+            return if_part, else_part if else_part else None
+    return line, None
+
+
+def _split_chain(line: str) -> list[tuple[str, str]]:
+    """Split a line on && and || operators, respecting quoted strings.
+
+    Returns a list of (segment, operator) tuples.  The last segment has
+    an empty-string operator.
+    """
+    segments: list[tuple[str, str]] = []
+    in_single = False
+    in_double = False
+    i = 0
+    start = 0
+    while i < len(line):
+        ch = line[i]
+        if ch == '"' and not in_single:
+            in_double = not in_double
+        elif ch == "'" and not in_double:
+            in_single = not in_single
+        elif not in_single and not in_double:
+            if line[i : i + 2] == '&&':
+                segments.append((line[start:i].rstrip(), '&&'))
+                i += 2
+                start = i
+                while i < len(line) and line[i] in ' \t':
+                    i += 1
+                start = i
+                continue
+            if line[i : i + 2] == '||':
+                segments.append((line[start:i].rstrip(), '||'))
+                i += 2
+                start = i
+                while i < len(line) and line[i] in ' \t':
+                    i += 1
+                start = i
+                continue
+        i += 1
+    segments.append((line[start:].rstrip(), ''))
+    return segments
+
+
+def _parse_single(line: str) -> CommandLine | None:
+    """Parse a single command (no chain operators), handling IF...ELSE."""
+    if_part, else_part = _split_if_else(line)
+
+    result = _parse_via_lark(if_part)
+    if result is None:
+        return None
+
+    if else_part and isinstance(result.command, IfCommand):
+        else_parsed = _parse_single(else_part)
+        if else_parsed is not None:
+            result.command.else_command = else_parsed
+
+    return result
+
+
 def parse_command(line: str) -> CommandLine | None:
     if not line or not line.strip():
         return None
 
     try:
-        return _parse_via_lark(line.strip())
+        stripped = line.strip()
+        segments = _split_chain(stripped)
+
+        if len(segments) == 1:
+            return _parse_single(segments[0][0])
+
+        # Build a left-associative chain tree
+        left = _parse_single(segments[0][0])
+        if left is None:
+            return None
+
+        for i in range(1, len(segments)):
+            op = segments[i - 1][1]
+            right = _parse_single(segments[i][0])
+            if right is None:
+                return None
+            chain = ChainCommand(left=left, operator=op, right=right)
+            left = CommandLine(command=chain)
+
+        return left
     except Exception:
         return None
 
