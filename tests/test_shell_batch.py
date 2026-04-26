@@ -833,3 +833,89 @@ DIR nonexistent || ECHO recovered"""
         output = '\n'.join(shell._output_capture)
         # %MYVAR% is expanded before parsing, so it uses the pre-SET value
         assert 'hello' in output
+
+    # ==================== Background Job Integration tests ====================
+
+    def _wait_for_jobs(self, shell, timeout=2.0):
+        import time
+
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            shell.jcs.reap()
+            if not shell.jcs.get_running_jobs():
+                return
+            time.sleep(0.05)
+
+    def test_start_b_echo_in_batch(self, shell):
+        """START /B works inside a batch file."""
+        shell.fs.write_file('bg.bat', '@ECHO OFF\nECHO background')
+        batch = """@ECHO OFF
+START /B /ID BG BG
+WAIT BG"""
+        shell.fs.write_file('test.bat', batch)
+        shell._output_capture.clear()
+        shell.execute_command('TEST')
+        output = '\n'.join(shell._output_capture)
+        assert 'completed' in output
+
+    def test_start_b_wait_errorlevel(self, shell):
+        """WAIT sets ERRORLEVEL from completed job."""
+        shell.fs.write_file('bg.bat', '@ECHO OFF\nECHO ok')
+        batch = """@ECHO OFF
+START /B /ID BG BG
+WAIT BG
+IF %ERRORLEVEL% EQU 0 ECHO SUCCESS"""
+        shell.fs.write_file('test.bat', batch)
+        shell._output_capture.clear()
+        shell.execute_command('TEST')
+        output = '\n'.join(shell._output_capture)
+        assert 'SUCCESS' in output or 'completed' in output
+
+    def test_parallel_jobs_in_batch(self, shell):
+        """Multiple START /B jobs can run in parallel from a batch file."""
+        shell.fs.write_file('a.bat', '@ECHO OFF\nECHO from_a')
+        shell.fs.write_file('b.bat', '@ECHO OFF\nECHO from_b')
+        batch = """@ECHO OFF
+START /B /ID A A
+START /B /ID B B
+WAIT /ALL"""
+        shell.fs.write_file('test.bat', batch)
+        shell._output_capture.clear()
+        shell.execute_command('TEST')
+        output = '\n'.join(shell._output_capture)
+        assert 'completed' in output
+
+    def test_kill_in_batch(self, shell):
+        """KILL command works in batch context."""
+        import threading
+
+        event = threading.Event()
+
+        def execute_fn(stdout_cb, stderr_cb):
+            event.wait(timeout=10)
+            return 0
+
+        shell.jcs.spawn('LONG', execute_fn, name='LONG')
+        batch = """@ECHO OFF
+KILL LONG /F"""
+        shell.fs.write_file('test.bat', batch)
+        try:
+            shell._output_capture.clear()
+            shell.execute_command('TEST')
+            output = '\n'.join(shell._output_capture)
+            assert 'terminated' in output
+        finally:
+            event.set()
+
+    def test_jobout_in_batch(self, shell):
+        """JOBOUT works in batch context."""
+        shell.fs.write_file('bg.bat', '@ECHO OFF\nECHO captured_output')
+        shell.execute_command('START /B /ID BG BG')
+        self._wait_for_jobs(shell)
+        batch = """@ECHO OFF
+JOBOUT BG"""
+        shell.fs.write_file('test.bat', batch)
+        shell._output_capture.clear()
+        shell.execute_command('TEST')
+        output = '\n'.join(shell._output_capture)
+        assert 'captured_output' in output

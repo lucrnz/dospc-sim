@@ -5,6 +5,7 @@ from collections.abc import Callable
 from datetime import datetime
 
 from dospc_sim.filesystem import UserFilesystem
+from dospc_sim.jcs import JobControlSubsystem
 from dospc_sim.parser import (
     CallCommand,
     ChainCommand,
@@ -207,6 +208,7 @@ class DOSShell(DOSShellCommandProvider):
         self._batch_file_cache: dict[tuple[str, str, str], str | None] = {}
         self._batch_cache_path: str = self.environment['PATH']
         self._batch_cache_cwd: str = ''
+        self.jcs = JobControlSubsystem()
         self._cmd_dispatch: dict[str, Callable[[list[str]], int]] = {}
         for attr in dir(self):
             if attr.startswith('cmd_'):
@@ -223,6 +225,8 @@ class DOSShell(DOSShellCommandProvider):
 
         def _replace(match):
             var_name = match.group(1).upper()
+            if var_name == 'ERRORLEVEL':
+                return str(self.last_errorlevel)
             if var_name in self.environment:
                 return self.environment[var_name]
             return match.group(0)

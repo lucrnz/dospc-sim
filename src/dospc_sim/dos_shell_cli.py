@@ -115,16 +115,20 @@ def _run_interactive(shell: DOSShell) -> int:
     """Run interactive shell session until EXIT or EOF."""
     shell.run()
 
-    while shell.running:
-        try:
-            command = input(shell.get_prompt())
-        except EOFError:
-            break
-        except KeyboardInterrupt:
-            print()
-            continue
+    try:
+        while shell.running:
+            shell.jcs.reap()
+            try:
+                command = input(shell.get_prompt())
+            except EOFError:
+                break
+            except KeyboardInterrupt:
+                print()
+                continue
 
-        shell.execute_command(command)
+            shell.execute_command(command)
+    finally:
+        shell.jcs.shutdown()
 
     return shell.last_errorlevel
 
@@ -148,6 +152,14 @@ def _run_stdin(shell: DOSShell, script_args: list[str]) -> int:
 
 def _noop() -> None:
     return None
+
+
+def _wait_bg(shell: DOSShell) -> None:
+    """Wait for all background jobs to complete."""
+    for job in shell.jcs.get_running_jobs():
+        if job.thread is not None:
+            job.thread.join(timeout=2)
+    shell.jcs.reap()
 
 
 def _build_benchmark_cases(shell: DOSShell) -> list[BenchmarkCase]:
@@ -305,6 +317,38 @@ def _build_benchmark_cases(shell: DOSShell) -> list[BenchmarkCase]:
             _noop,
             lambda: shell.execute_batch_content(batch_script),
             run('ECHO ON'),
+            _noop,
+        ),
+        BenchmarkCase(
+            'START /B',
+            _noop,
+            lambda: (
+                shell.execute_command('START /B ECHO hello'),
+                _wait_bg(shell),
+                shell.jcs.purge_completed(),
+            ),
+            _noop,
+            _noop,
+        ),
+        BenchmarkCase(
+            'JOBS',
+            lambda: (
+                shell.execute_command('START /B ECHO hello'),
+                _wait_bg(shell),
+            ),
+            run('JOBS'),
+            _noop,
+            lambda: shell.jcs.purge_completed(),
+        ),
+        BenchmarkCase(
+            'WAIT',
+            _noop,
+            lambda: (
+                shell.execute_command('START /B ECHO hello'),
+                shell.execute_command('WAIT /ALL'),
+                shell.jcs.purge_completed(),
+            ),
+            _noop,
             _noop,
         ),
     ]

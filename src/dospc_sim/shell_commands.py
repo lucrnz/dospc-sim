@@ -3,7 +3,10 @@
 import difflib
 import fnmatch
 import re
+import time
 from datetime import datetime
+
+from dospc_sim.jcs import JobStatus
 
 SHELL_COMMAND_NAMES: tuple[str, ...] = (
     'CALL',
@@ -24,6 +27,10 @@ SHELL_COMMAND_NAMES: tuple[str, ...] = (
     'GOTO',
     'HELP',
     'IF',
+    'JOBERR',
+    'JOBOUT',
+    'JOBS',
+    'KILL',
     'MD',
     'MKDIR',
     'MORE',
@@ -37,10 +44,12 @@ SHELL_COMMAND_NAMES: tuple[str, ...] = (
     'RMDIR',
     'SET',
     'SORT',
+    'START',
     'TIME',
     'TREE',
     'TYPE',
     'VER',
+    'WAIT',
 )
 
 SHELL_COMMAND_HELP_TEXTS: dict[str, str] = {
@@ -75,6 +84,18 @@ SHELL_COMMAND_HELP_TEXTS: dict[str, str] = {
         '\nIF [NOT] DEFINED variable command'
         '\nIF condition command ELSE command'
     ),
+    'JOBERR': (
+        'Displays captured stderr of a background job.'
+        '\n\nJOBERR jobid [/TAIL] [/N:lines]'
+    ),
+    'JOBOUT': (
+        'Displays captured stdout of a background job.'
+        '\n\nJOBOUT jobid [/TAIL] [/N:lines]'
+    ),
+    'JOBS': ('Lists all background jobs in the job table.\n\nJOBS [/V] [/PURGE]'),
+    'KILL': (
+        'Terminates one or all background jobs.\n\nKILL jobid [/F]\nKILL /ALL [/F]'
+    ),
     'MD': 'Creates a directory.',
     'MKDIR': 'Creates a directory.',
     'MORE': 'Displays output one screen at a time.\n\nMORE filename',
@@ -88,10 +109,18 @@ SHELL_COMMAND_HELP_TEXTS: dict[str, str] = {
     'RMDIR': 'Removes a directory.',
     'SET': 'Displays, sets, or removes environment variables.',
     'SORT': 'Sorts input lines.\n\nSORT [/R] [filename] [/O outputfile]',
+    'START': (
+        'Starts a command in a background job.\n\nSTART /B [/ID:name] command [args...]'
+    ),
     'TIME': 'Displays or sets the system time.',
     'TREE': 'Graphically displays the directory structure.\n\nTREE [path] [/F]',
     'TYPE': 'Displays the contents of a text file.',
     'VER': 'Displays the operating system version.',
+    'WAIT': (
+        'Waits for one or all background jobs to complete.'
+        '\n\nWAIT jobid [/T:seconds]'
+        '\nWAIT /ALL [/T:seconds]'
+    ),
 }
 
 
@@ -757,9 +786,353 @@ class TextProcessingCommandGroup:
         return 1
 
 
+class JobCommandGroup:
+    """Background job management DOS commands."""
+
+    def cmd_start(self, args: list[str]) -> int:
+        background = False
+        job_name = None
+        cmd_args = []
+        expect_id_value = False
+        i = 0
+        while i < len(args):
+            upper = args[i].upper()
+            if expect_id_value:
+                expect_id_value = False
+                val = args[i]
+                if val.startswith(':'):
+                    val = val[1:]
+                job_name = val
+            elif upper == '/B' and not cmd_args:
+                background = True
+            elif upper == '/ID' and not cmd_args:
+                expect_id_value = True
+            elif not cmd_args and upper.startswith('/ID:'):
+                job_name = args[i][4:]
+            else:
+                cmd_args.append(args[i])
+            i += 1
+
+        if not background:
+            self._output_line('START requires /B flag in this environment.')
+            self.last_errorlevel = 1
+            return 1
+
+        if not cmd_args:
+            self._output_line('ERROR: COULD NOT START: (no command)')
+            self.last_errorlevel = 1
+            return 1
+
+        command_str = ' '.join(cmd_args)
+        parent_cwd = self.fs.get_current_path()
+        parent_env = dict(self.environment)
+        parent_echo = self._echo_on
+        parent_jcs = self.jcs
+
+        def execute_fn(stdout_cb, stderr_cb):
+            from dospc_sim.dos_shell import DOSShell
+            from dospc_sim.filesystem import UserFilesystem
+
+            bg_fs = UserFilesystem(str(self.fs.home_dir), self.username)
+            bg_shell = DOSShell(bg_fs, self.username, stdout_cb)
+            bg_shell.environment = dict(parent_env)
+            bg_shell._echo_on = parent_echo
+            bg_shell.jcs = parent_jcs
+            try:
+                bg_fs.change_directory(parent_cwd)
+            except Exception:
+                pass
+            try:
+                return bg_shell.execute_command(command_str)
+            except Exception as exc:
+                stderr_cb(f'ERROR: COULD NOT START: {command_str}: {exc}')
+                raise
+
+        _entry, error = self.jcs.spawn(command_str, execute_fn, job_name)
+        if error:
+            self._output_line(error)
+            self.last_errorlevel = 1
+            return 1
+
+        self.last_errorlevel = 0
+        return 0
+
+    def cmd_jobs(self, args: list[str]) -> int:
+        self.jcs.reap()
+        verbose = any(a.upper() == '/V' for a in args)
+        purge = any(a.upper() == '/PURGE' for a in args)
+
+        if purge:
+            self.jcs.purge_completed()
+            self.jcs.reap()
+
+        jobs = self.jcs.get_all_jobs()
+        if not jobs:
+            if not self.jcs.has_any_jobs():
+                self.last_errorlevel = 1
+                return 1
+            self.last_errorlevel = 0
+            return 0
+
+        if verbose:
+            self._output_line(
+                f'  {"ID":<10}{"TID":<7}{"STATUS":<10}'
+                f'{"EXIT":<6}{"STARTED":<10}{"COMMAND"}'
+            )
+            self._output_line(
+                f'  {"--------":<10}{"-----":<7}{"--------":<10}'
+                f'{"----":<6}{"--------":<10}{"-" * 23}'
+            )
+            for job in jobs:
+                tid = ''
+                if job.thread and job.thread.ident:
+                    tid = str(job.thread.ident)[:5]
+                exit_str = str(job.exit_code) if job.status != JobStatus.RUNNING else ''
+                time_str = job.start_time.strftime('%H:%M:%S')
+                cmd_display = job.command[:23] if len(job.command) > 23 else job.command
+                self._output_line(
+                    f'  {job.id:<10}{tid:<7}{job.status.name:<10}'
+                    f'{exit_str:<6}{time_str:<10}{cmd_display}'
+                )
+        else:
+            self._output_line(f'  {"ID":<10}{"STATUS":<10}{"EXIT":<6}')
+            self._output_line(f'  {"--------":<10}{"--------":<10}{"----":<6}')
+            for job in jobs:
+                exit_str = str(job.exit_code) if job.status != JobStatus.RUNNING else ''
+                self._output_line(f'  {job.id:<10}{job.status.name:<10}{exit_str:<6}')
+
+        self.last_errorlevel = 0
+        return 0
+
+    def cmd_wait(self, args: list[str]) -> int:
+        self.jcs.reap()
+        wait_all = False
+        job_id = None
+        timeout = None
+
+        i = 0
+        while i < len(args):
+            upper = args[i].upper()
+            if upper == '/ALL':
+                wait_all = True
+            elif upper == '/T' and i + 1 < len(args) and args[i + 1].startswith(':'):
+                try:
+                    timeout = float(args[i + 1][1:])
+                except ValueError:
+                    self._output_line('ERROR: INVALID TIMEOUT VALUE')
+                    self.last_errorlevel = 1
+                    return 1
+                i += 1
+            elif upper.startswith('/T:'):
+                try:
+                    timeout = float(upper[3:])
+                except ValueError:
+                    self._output_line('ERROR: INVALID TIMEOUT VALUE')
+                    self.last_errorlevel = 1
+                    return 1
+            elif not args[i].startswith('/') and not args[i].startswith(':'):
+                job_id = args[i]
+            i += 1
+
+        if not wait_all and job_id is None:
+            self._output_line(
+                'Usage: WAIT jobid [/T:seconds] or WAIT /ALL [/T:seconds]'
+            )
+            self.last_errorlevel = 1
+            return 1
+
+        if wait_all:
+            running = self.jcs.get_running_jobs()
+            if not running:
+                all_jobs = self.jcs.get_all_jobs()
+                highest_exit = 0
+                for job in all_jobs:
+                    if job.exit_code == 0:
+                        self._output_line(f'{job.id} completed (exit code 0).')
+                    else:
+                        self._output_line(
+                            f'{job.id} failed (exit code {job.exit_code}).'
+                        )
+                        if job.exit_code > highest_exit:
+                            highest_exit = job.exit_code
+                self.last_errorlevel = highest_exit
+                return highest_exit
+            highest_exit = 0
+            for job in running:
+                completed = self.jcs.wait_job(job, timeout)
+                self.jcs.reap()
+                if not completed:
+                    self._output_line(f'WAIT TIMEOUT: {job.id}')
+                    self.last_errorlevel = 2
+                    return 2
+                if job.exit_code == 0:
+                    self._output_line(f'{job.id} completed (exit code 0).')
+                else:
+                    self._output_line(f'{job.id} failed (exit code {job.exit_code}).')
+                    if job.exit_code > highest_exit:
+                        highest_exit = job.exit_code
+            self.last_errorlevel = highest_exit
+            return highest_exit
+
+        job = self.jcs.get_job(job_id)
+        if job is None:
+            self._output_line(f'ERROR: NO SUCH JOB: {job_id.upper()}')
+            self.last_errorlevel = 1
+            return 1
+
+        completed = self.jcs.wait_job(job, timeout)
+        self.jcs.reap()
+        if not completed:
+            self._output_line(f'WAIT TIMEOUT: {job.id}')
+            self.last_errorlevel = 2
+            return 2
+
+        if job.exit_code == 0:
+            self._output_line(f'{job.id} completed (exit code 0).')
+            self.last_errorlevel = 0
+            return 0
+        else:
+            self._output_line(f'{job.id} failed (exit code {job.exit_code}).')
+            self.last_errorlevel = job.exit_code
+            return job.exit_code
+
+    def cmd_kill(self, args: list[str]) -> int:
+        self.jcs.reap()
+        kill_all = False
+        force = False
+        job_id = None
+
+        for arg in args:
+            upper = arg.upper()
+            if upper == '/ALL':
+                kill_all = True
+            elif upper == '/F':
+                force = True
+            elif not arg.startswith('/'):
+                job_id = arg
+
+        if not kill_all and job_id is None:
+            self._output_line('Usage: KILL jobid [/F] or KILL /ALL [/F]')
+            self.last_errorlevel = 1
+            return 1
+
+        if kill_all:
+            running = self.jcs.get_running_jobs()
+            if not running:
+                self.last_errorlevel = 0
+                return 0
+            for job in running:
+                if self.jcs.kill_job(job, force):
+                    self._output_line(f'{job.id} terminated.')
+                else:
+                    self._output_line(f'ERROR: COULD NOT TERMINATE: {job.id}')
+                    self.last_errorlevel = 2
+                    return 2
+            self.last_errorlevel = 0
+            return 0
+
+        job = self.jcs.get_job(job_id)
+        if job is None:
+            self._output_line(f'ERROR: NO SUCH JOB: {job_id.upper()}')
+            self.last_errorlevel = 1
+            return 1
+
+        if job.status != JobStatus.RUNNING:
+            self._output_line(f'ERROR: JOB NOT RUNNING: {job.id}')
+            self.last_errorlevel = 1
+            return 1
+
+        if self.jcs.kill_job(job, force):
+            self._output_line(f'{job.id} terminated.')
+            self.last_errorlevel = 0
+            return 0
+        else:
+            self._output_line(f'ERROR: COULD NOT TERMINATE: {job.id}')
+            self.last_errorlevel = 2
+            return 2
+
+    def cmd_jobout(self, args: list[str]) -> int:
+        return self._job_output(args, 'stdout')
+
+    def cmd_joberr(self, args: list[str]) -> int:
+        return self._job_output(args, 'stderr')
+
+    def _job_output(self, args: list[str], stream: str) -> int:
+        self.jcs.reap()
+        job_id = None
+        tail = False
+        n_lines = None
+
+        i = 0
+        while i < len(args):
+            upper = args[i].upper()
+            if upper == '/TAIL':
+                tail = True
+            elif upper == '/N' and i + 1 < len(args) and args[i + 1].startswith(':'):
+                try:
+                    n_lines = int(args[i + 1][1:])
+                except ValueError:
+                    pass
+                i += 1
+            elif upper.startswith('/N:'):
+                try:
+                    n_lines = int(upper[3:])
+                except ValueError:
+                    pass
+            elif not args[i].startswith('/') and not args[i].startswith(':'):
+                job_id = args[i]
+            i += 1
+
+        if job_id is None:
+            cmd_name = 'JOBOUT' if stream == 'stdout' else 'JOBERR'
+            self._output_line(f'Usage: {cmd_name} jobid [/TAIL] [/N:lines]')
+            self.last_errorlevel = 1
+            return 1
+
+        job = self.jcs.get_job(job_id)
+        if job is None:
+            self._output_line(f'ERROR: NO SUCH JOB: {job_id.upper()}')
+            self.last_errorlevel = 1
+            return 1
+
+        if tail:
+            seen_len = 0
+            while True:
+                self.jcs.reap()
+                with job._lock:
+                    buf = job.stdout_buf if stream == 'stdout' else job.stderr_buf
+                    new_data = buf[seen_len:]
+                    seen_len = len(buf)
+                    done = job.status != JobStatus.RUNNING
+                if new_data:
+                    for line in new_data.splitlines():
+                        self._output_line(line)
+                if done:
+                    with job._lock:
+                        buf = job.stdout_buf if stream == 'stdout' else job.stderr_buf
+                        final = buf[seen_len:]
+                    if final:
+                        for line in final.splitlines():
+                            self._output_line(line)
+                    break
+                time.sleep(0.25)
+        else:
+            with job._lock:
+                buf = job.stdout_buf if stream == 'stdout' else job.stderr_buf
+            lines = buf.splitlines()
+            if n_lines is not None:
+                lines = lines[-n_lines:]
+            for line in lines:
+                self._output_line(line)
+
+        self.last_errorlevel = 0
+        return 0
+
+
 class DOSShellCommandProvider(
     FileSystemCommandGroup,
     ShellCoreCommandGroup,
     TextProcessingCommandGroup,
+    JobCommandGroup,
 ):
     """Command implementations for the DOS shell runtime."""

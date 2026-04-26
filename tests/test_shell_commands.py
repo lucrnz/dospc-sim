@@ -848,3 +848,440 @@ ECHO %2"""
         shell.execute_command('ECHO %PATH%')
         output = '\n'.join(shell._output_capture)
         assert 'C:\\' in output
+
+
+class TestBackgroundJobCommands:
+    """Tests for START /B, JOBS, WAIT, KILL, JOBOUT, JOBERR commands."""
+
+    def _wait_for_jobs(self, shell, timeout=2.0):
+        """Wait for all background jobs to complete."""
+        import time
+
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            shell.jcs.reap()
+            if not shell.jcs.get_running_jobs():
+                return
+            time.sleep(0.05)
+
+    # ==================== START /B tests ====================
+
+    def test_start_b_basic(self, shell):
+        """START /B spawns a background job."""
+        shell.fs.write_file('test.bat', 'ECHO hello from bg')
+        shell._output_capture.clear()
+        result = shell.execute_command('START /B TEST')
+        assert result == 0
+        self._wait_for_jobs(shell)
+        jobs = shell.jcs.get_all_jobs()
+        assert len(jobs) == 1
+        assert jobs[0].id == 'JOB1'
+
+    def test_start_b_with_id(self, shell):
+        """START /B /ID:name assigns custom job ID."""
+        shell.fs.write_file('test.bat', 'ECHO hello')
+        shell._output_capture.clear()
+        result = shell.execute_command('START /B /ID BUILD TEST')
+        assert result == 0
+        self._wait_for_jobs(shell)
+        job = shell.jcs.get_job('BUILD')
+        assert job is not None
+
+    def test_start_b_duplicate_id(self, shell):
+        """START /B with duplicate ID fails."""
+        shell.fs.write_file('test.bat', 'ECHO hello')
+        shell.execute_command('START /B /ID BUILD TEST')
+        shell._output_capture.clear()
+        result = shell.execute_command('START /B /ID BUILD TEST')
+        assert result == 1
+        output = '\n'.join(shell._output_capture)
+        assert 'ALREADY IN USE' in output
+
+    def test_start_without_b_fails(self, shell):
+        """START without /B flag fails."""
+        shell._output_capture.clear()
+        result = shell.execute_command('START ECHO hello')
+        assert result == 1
+
+    def test_start_b_no_command_fails(self, shell):
+        """START /B without a command fails."""
+        shell._output_capture.clear()
+        result = shell.execute_command('START /B')
+        assert result == 1
+
+    def test_start_b_captures_stdout(self, shell):
+        """Background job captures stdout."""
+        shell.fs.write_file('test.bat', '@ECHO OFF\nECHO captured output')
+        shell.execute_command('START /B TEST')
+        self._wait_for_jobs(shell)
+        job = shell.jcs.get_all_jobs()[0]
+        assert 'captured output' in job.stdout_buf
+
+    def test_start_b_sets_errorlevel_zero(self, shell):
+        """START /B always returns 0 immediately."""
+        shell.fs.write_file('fail.bat', 'DIR nonexistent')
+        result = shell.execute_command('START /B FAIL')
+        assert result == 0
+
+    # ==================== JOBS tests ====================
+
+    def test_jobs_empty(self, shell):
+        """JOBS with no jobs ever started returns 1."""
+        result = shell.execute_command('JOBS')
+        assert result == 1
+
+    def test_jobs_lists_jobs(self, shell):
+        """JOBS lists background jobs."""
+        shell.fs.write_file('test.bat', 'ECHO hello')
+        shell.execute_command('START /B /ID BUILD TEST')
+        self._wait_for_jobs(shell)
+        shell._output_capture.clear()
+        result = shell.execute_command('JOBS')
+        output = '\n'.join(shell._output_capture)
+        assert result == 0
+        assert 'BUILD' in output
+
+    def test_jobs_verbose(self, shell):
+        """JOBS /V shows verbose output."""
+        shell.fs.write_file('test.bat', 'ECHO hello')
+        shell.execute_command('START /B /ID BUILD TEST')
+        self._wait_for_jobs(shell)
+        shell._output_capture.clear()
+        result = shell.execute_command('JOBS /V')
+        output = '\n'.join(shell._output_capture)
+        assert result == 0
+        assert 'BUILD' in output
+        assert 'COMMAND' in output
+
+    def test_jobs_purge(self, shell):
+        """JOBS /PURGE removes completed jobs."""
+        shell.fs.write_file('test.bat', 'ECHO hello')
+        shell.execute_command('START /B TEST')
+        self._wait_for_jobs(shell)
+        shell.execute_command('JOBS /PURGE')
+        shell._output_capture.clear()
+        shell.execute_command('JOBS')
+        output = '\n'.join(shell._output_capture)
+        assert 'JOB1' not in output
+
+    # ==================== WAIT tests ====================
+
+    def test_wait_specific_job(self, shell):
+        """WAIT waits for a specific job."""
+        shell.fs.write_file('test.bat', 'ECHO hello')
+        shell.execute_command('START /B /ID BUILD TEST')
+        shell._output_capture.clear()
+        result = shell.execute_command('WAIT BUILD')
+        output = '\n'.join(shell._output_capture)
+        assert 'BUILD completed' in output
+        assert result == 0
+
+    def test_wait_all(self, shell):
+        """WAIT /ALL waits for all running jobs."""
+        shell.fs.write_file('test.bat', 'ECHO hello')
+        shell.execute_command('START /B /ID A TEST')
+        shell.execute_command('START /B /ID B TEST')
+        shell._output_capture.clear()
+        result = shell.execute_command('WAIT /ALL')
+        output = '\n'.join(shell._output_capture)
+        assert 'completed' in output
+        assert result == 0
+
+    def test_wait_failed_job(self, shell):
+        """WAIT returns job's exit code on failure."""
+        shell.fs.write_file('fail.bat', '@ECHO OFF\nDIR nonexistent')
+        shell.execute_command('START /B /ID FAIL FAIL')
+        shell._output_capture.clear()
+        result = shell.execute_command('WAIT FAIL')
+        output = '\n'.join(shell._output_capture)
+        assert 'failed' in output
+        assert result != 0
+
+    def test_wait_unknown_job(self, shell):
+        """WAIT with unknown job ID returns 1."""
+        shell._output_capture.clear()
+        result = shell.execute_command('WAIT NOPE')
+        output = '\n'.join(shell._output_capture)
+        assert result == 1
+        assert 'NO SUCH JOB' in output
+
+    def test_wait_timeout(self, shell):
+        """WAIT /T:n times out."""
+        import threading
+
+        event = threading.Event()
+
+        def execute_fn(stdout_cb, stderr_cb):
+            event.wait(timeout=10)
+            return 0
+
+        shell.jcs.spawn('SLOW', execute_fn, name='SLOW')
+        try:
+            shell._output_capture.clear()
+            result = shell.execute_command('WAIT SLOW /T:0.3')
+            output = '\n'.join(shell._output_capture)
+            assert result == 2
+            assert 'TIMEOUT' in output
+        finally:
+            event.set()
+
+    # ==================== KILL tests ====================
+
+    def test_kill_running_job(self, shell):
+        """KILL terminates a running job."""
+        import threading
+
+        event = threading.Event()
+
+        def execute_fn(stdout_cb, stderr_cb):
+            event.wait(timeout=10)
+            return 0
+
+        shell.jcs.spawn('LONG', execute_fn, name='LONG')
+        try:
+            shell._output_capture.clear()
+            result = shell.execute_command('KILL LONG /F')
+            output = '\n'.join(shell._output_capture)
+            assert result == 0
+            assert 'terminated' in output
+        finally:
+            event.set()
+
+    def test_kill_all(self, shell):
+        """KILL /ALL terminates all running jobs."""
+        import threading
+
+        event = threading.Event()
+
+        def execute_fn(stdout_cb, stderr_cb):
+            event.wait(timeout=10)
+            return 0
+
+        shell.jcs.spawn('A', execute_fn, name='A')
+        shell.jcs.spawn('B', execute_fn, name='B')
+        try:
+            shell._output_capture.clear()
+            result = shell.execute_command('KILL /ALL /F')
+            output = '\n'.join(shell._output_capture)
+            assert result == 0
+            assert 'terminated' in output
+        finally:
+            event.set()
+
+    def test_kill_unknown_job(self, shell):
+        """KILL with unknown job ID returns 1."""
+        shell._output_capture.clear()
+        result = shell.execute_command('KILL NOPE')
+        output = '\n'.join(shell._output_capture)
+        assert result == 1
+        assert 'NO SUCH JOB' in output
+
+    def test_kill_completed_job(self, shell):
+        """KILL on already completed job returns 1."""
+        shell.fs.write_file('test.bat', 'ECHO hello')
+        shell.execute_command('START /B /ID DONE TEST')
+        self._wait_for_jobs(shell)
+        shell._output_capture.clear()
+        result = shell.execute_command('KILL DONE')
+        output = '\n'.join(shell._output_capture)
+        assert result == 1
+        assert 'NOT RUNNING' in output
+
+    # ==================== JOBOUT tests ====================
+
+    def test_jobout_shows_stdout(self, shell):
+        """JOBOUT displays captured stdout."""
+        shell.fs.write_file('test.bat', '@ECHO OFF\nECHO hello world')
+        shell.execute_command('START /B /ID OUT TEST')
+        self._wait_for_jobs(shell)
+        shell._output_capture.clear()
+        result = shell.execute_command('JOBOUT OUT')
+        output = '\n'.join(shell._output_capture)
+        assert result == 0
+        assert 'hello world' in output
+
+    def test_jobout_n_lines(self, shell):
+        """JOBOUT /N:n shows last n lines."""
+        shell.fs.write_file('test.bat', '@ECHO OFF\nECHO line1\nECHO line2\nECHO line3')
+        shell.execute_command('START /B /ID OUT TEST')
+        self._wait_for_jobs(shell)
+        shell._output_capture.clear()
+        result = shell.execute_command('JOBOUT OUT /N:1')
+        output = '\n'.join(shell._output_capture)
+        assert result == 0
+        assert 'line3' in output
+        assert 'line1' not in output
+
+    def test_jobout_unknown_job(self, shell):
+        """JOBOUT with unknown job returns 1."""
+        result = shell.execute_command('JOBOUT NOPE')
+        assert result == 1
+
+    # ==================== JOBERR tests ====================
+
+    def test_joberr_shows_stderr(self, shell):
+        """JOBERR displays captured stderr."""
+
+        def execute_fn(stdout_cb, stderr_cb):
+            stderr_cb('error output')
+            return 1
+
+        shell.jcs.spawn('ERR', execute_fn, name='ERR')
+        shell.jcs.get_job('ERR').thread.join(timeout=2)
+        shell.jcs.reap()
+        shell._output_capture.clear()
+        result = shell.execute_command('JOBERR ERR')
+        output = '\n'.join(shell._output_capture)
+        assert result == 0
+        assert 'error output' in output
+
+    def test_joberr_unknown_job(self, shell):
+        """JOBERR with unknown job returns 1."""
+        result = shell.execute_command('JOBERR NOPE')
+        assert result == 1
+
+    # ==================== HELP tests for new commands ====================
+
+    def test_help_start(self, shell):
+        """HELP START shows help text."""
+        shell._output_capture.clear()
+        shell.execute_command('HELP START')
+        output = '\n'.join(shell._output_capture)
+        assert 'START' in output
+
+    def test_help_jobs(self, shell):
+        """HELP JOBS shows help text."""
+        shell._output_capture.clear()
+        shell.execute_command('HELP JOBS')
+        output = '\n'.join(shell._output_capture)
+        assert 'JOBS' in output
+
+    def test_help_wait(self, shell):
+        """HELP WAIT shows help text."""
+        shell._output_capture.clear()
+        shell.execute_command('HELP WAIT')
+        output = '\n'.join(shell._output_capture)
+        assert 'WAIT' in output
+
+    def test_help_kill(self, shell):
+        """HELP KILL shows help text."""
+        shell._output_capture.clear()
+        shell.execute_command('HELP KILL')
+        output = '\n'.join(shell._output_capture)
+        assert 'KILL' in output
+
+    # ==================== /TAIL tests ====================
+
+    def test_jobout_tail(self, shell):
+        """JOBOUT /TAIL follows output until job ends."""
+
+        def execute_fn(stdout_cb, stderr_cb):
+            stdout_cb('line1')
+            stdout_cb('line2')
+            return 0
+
+        shell.jcs.spawn('CMD', execute_fn, name='TAIL')
+        shell.jcs.get_job('TAIL').thread.join(timeout=2)
+        shell.jcs.reap()
+        shell._output_capture.clear()
+        result = shell.execute_command('JOBOUT TAIL /TAIL')
+        output = '\n'.join(shell._output_capture)
+        assert result == 0
+        assert 'line1' in output
+        assert 'line2' in output
+
+    # ==================== Ring buffer at shell level ====================
+
+    def test_jobout_ring_buffer_truncation(self, shell):
+        """Large output is truncated by the ring buffer."""
+        from dospc_sim.jcs import JOB_OUT_BUFSZ
+
+        def execute_fn(stdout_cb, stderr_cb):
+            for i in range(2000):
+                stdout_cb(f'line {i} ' + 'x' * 40)
+            return 0
+
+        shell.jcs.spawn('CMD', execute_fn, name='BIG')
+        shell.jcs.get_job('BIG').thread.join(timeout=5)
+        shell.jcs.reap()
+        job = shell.jcs.get_job('BIG')
+        assert len(job.stdout_buf) <= JOB_OUT_BUFSZ
+
+    # ==================== WAIT /ALL mixed results ====================
+
+    def test_wait_all_highest_exit_code(self, shell):
+        """WAIT /ALL returns highest non-zero exit code."""
+
+        def ok_fn(stdout_cb, stderr_cb):
+            return 0
+
+        def fail_fn(stdout_cb, stderr_cb):
+            return 3
+
+        shell.jcs.spawn('CMD1', ok_fn, name='OK')
+        shell.jcs.spawn('CMD2', fail_fn, name='FAIL')
+        shell.jcs.get_job('OK').thread.join(timeout=2)
+        shell.jcs.get_job('FAIL').thread.join(timeout=2)
+        shell._output_capture.clear()
+        result = shell.execute_command('WAIT /ALL')
+        assert result == 3
+
+    # ==================== START /B with inline command ====================
+
+    def test_start_b_inline_echo(self, shell):
+        """START /B with inline ECHO command."""
+        shell.execute_command('START /B ECHO hello')
+        self._wait_for_jobs(shell)
+        job = shell.jcs.get_all_jobs()[0]
+        assert 'hello' in job.stdout_buf
+
+    # ==================== JOBS after purge ====================
+
+    def test_jobs_after_purge_returns_zero(self, shell):
+        """JOBS returns 0 after purge when jobs were started."""
+        shell.fs.write_file('test.bat', 'ECHO hello')
+        shell.execute_command('START /B TEST')
+        self._wait_for_jobs(shell)
+        shell.execute_command('JOBS /PURGE')
+        shell._output_capture.clear()
+        result = shell.execute_command('JOBS')
+        assert result == 0
+
+    # ==================== KILL /ALL with no running jobs ====================
+
+    def test_kill_all_no_running(self, shell):
+        """KILL /ALL with no running jobs returns 0."""
+        shell.fs.write_file('test.bat', 'ECHO hello')
+        shell.execute_command('START /B TEST')
+        self._wait_for_jobs(shell)
+        shell._output_capture.clear()
+        result = shell.execute_command('KILL /ALL')
+        assert result == 0
+
+    # ==================== Invalid /ID ====================
+
+    def test_start_b_invalid_id_chars(self, shell):
+        """START /B with invalid ID characters fails."""
+        shell._output_capture.clear()
+        result = shell.execute_command('START /B /ID bad!name ECHO hello')
+        assert result == 1
+        output = '\n'.join(shell._output_capture)
+        assert 'INVALID JOB ID' in output
+
+    # ==================== %ERRORLEVEL% expansion ====================
+
+    def test_errorlevel_variable_expansion(self, shell):
+        """ERRORLEVEL expands as a dynamic pseudo-variable."""
+        shell.last_errorlevel = 42
+        shell._output_capture.clear()
+        shell.execute_command('ECHO %ERRORLEVEL%')
+        output = '\n'.join(shell._output_capture)
+        assert '42' in output
+
+    def test_errorlevel_variable_after_command(self, shell):
+        """ERRORLEVEL reflects last command's exit code."""
+        shell.execute_command('DIR nonexistent')
+        shell._output_capture.clear()
+        shell.execute_command('ECHO %ERRORLEVEL%')
+        output = '\n'.join(shell._output_capture)
+        assert '1' in output

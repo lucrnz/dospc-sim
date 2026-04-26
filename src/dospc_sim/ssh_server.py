@@ -203,6 +203,7 @@ class SSHInteractiveSession:
         self.command_buffer = ''
         self.cursor_pos = 0
         if self.shell.running:
+            self.shell.jcs.reap()
             self._show_prompt()
         return index
 
@@ -384,6 +385,8 @@ class SSHClientHandler(threading.Thread):
             session.run()
         except Exception as e:
             logger.error(f'Error in shell for {user.username}: {e}')
+        finally:
+            self.shell.jcs.shutdown()
 
         logger.info(f'Session ended for user {user.username} from {self.address[0]}')
         try:

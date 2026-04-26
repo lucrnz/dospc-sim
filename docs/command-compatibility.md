@@ -39,6 +39,12 @@ This document details the DOS command compatibility status for the SSH DOS Envir
 | `DATE` | ✅ Fully Implemented | Display date | Shows current date (setting date not planned) |
 | `TIME` | ✅ Fully Implemented | Display time | Shows current time (setting time not planned) |
 
+### Background Job Management
+
+| Command | Status | Description | Notes |
+|---------|--------|-------------|-------|
+| `START` | ✅ Fully Implemented | Start a command in a background job | Supports `/B` (background); `/ID:name` is a DOS+ extension |
+
 ### I/O Redirection and Pipes
 
 | Feature | Status | Description | Notes |
@@ -70,6 +76,26 @@ This document details the DOS command compatibility status for the SSH DOS Envir
 | `@` Prefix | ✅ Fully Implemented | Suppress echo for single line | Prevents command echo for the prefixed line only |
 | `IF DEFINED` | ✅ Fully Implemented | Check if variable is defined | Supports `NOT` modifier; variable names are case-insensitive |
 | `IF` / `ELSE` | ✅ Fully Implemented | Else clause for conditionals | Works with all IF condition types (`EXIST`, `ERRORLEVEL`, string comparison, `DEFINED`) |
+
+## DOS+ Features
+
+Enhancements to the DOS shell unique to this project. These commands do not exist in DOS or WinNT `cmd.exe`.
+
+### DOS+ Background Job Commands
+
+| Command | Description | Notes |
+|---------|-------------|-------|
+| `JOBS` | List background jobs | Supports `/V` (verbose) and `/PURGE` (remove completed) |
+| `WAIT` | Wait for background jobs to complete | Supports specific job ID, `/ALL`, and `/T:seconds` timeout |
+| `KILL` | Terminate background jobs | Supports specific job ID, `/ALL`, and `/F` (force) |
+| `JOBOUT` | Display captured stdout of a background job | Supports `/TAIL` (follow) and `/N:lines` (last N lines) |
+| `JOBERR` | Display captured stderr of a background job | Supports `/TAIL` (follow) and `/N:lines` (last N lines) |
+
+### DOS+ Extensions to Standard Commands
+
+| Command | Extension | Description |
+|---------|-----------|-------------|
+| `START /B` | `/ID:name` | Assign a human-readable job name (alphanumeric + underscore, max 32 chars); standard `START /B` is WinNT, `/ID:name` is DOS+ |
 
 ## Command Details
 
@@ -169,6 +195,52 @@ This document details the DOS command compatibility status for the SSH DOS Envir
 FOR %%F IN (file1.txt file2.txt file3.txt) DO TYPE %%F
 ```
 
+### START Command
+
+**Syntax:** `START /B [/ID:name] command [args...]`
+
+**Switches:**
+- `/B` - Run in background (required in this environment; standard WinNT)
+- `/ID:name` - Assign a human-readable job name (DOS+ extension)
+
+**Notes:**
+- Without `/ID`, jobs are auto-named `JOB1`, `JOB2`, etc.
+- Background jobs run in separate threads with captured stdout/stderr
+- Job table maximum is 64 entries
+- Shell returns immediately with `%ERRORLEVEL%` = 0
+
+### JOBS Command (DOS+)
+
+**Syntax:** `JOBS [/V] [/PURGE]`
+
+**Switches:**
+- `/V` - Verbose: include thread ID, start time, and command
+- `/PURGE` - Remove completed/killed/failed jobs from the table
+
+### WAIT Command (DOS+)
+
+**Syntax:** `WAIT jobid [/T:seconds]` or `WAIT /ALL [/T:seconds]`
+
+**Switches:**
+- `/ALL` - Wait for all running jobs
+- `/T:n` - Timeout in seconds; continue on expiry (sets `%ERRORLEVEL%` = 2)
+
+### KILL Command (DOS+)
+
+**Syntax:** `KILL jobid [/F]` or `KILL /ALL [/F]`
+
+**Switches:**
+- `/ALL` - Terminate all running jobs
+- `/F` - Force kill (mark as killed immediately)
+
+### JOBOUT / JOBERR Commands (DOS+)
+
+**Syntax:** `JOBOUT jobid [/TAIL] [/N:lines]` / `JOBERR jobid [/TAIL] [/N:lines]`
+
+**Switches:**
+- `/TAIL` - Follow output live until job ends
+- `/N:n` - Print last n lines only
+
 ## Security Features
 
 ### User Isolation
@@ -201,7 +273,7 @@ The following environment variables are available:
 
 ### Not Implemented
 
-1. **Background execution (`&`)**: Not applicable in this environment
+1. ~~**Background execution (`&`)**~~: Implemented via `START /B` and the DOS+ job management commands (`JOBS`, `WAIT`, `KILL`, `JOBOUT`, `JOBERR`)
 
 ## Interactive Shell Features
 
