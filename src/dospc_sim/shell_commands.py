@@ -317,15 +317,21 @@ class FileSystemCommandGroup:
         for pattern in files:
             try:
                 if '*' in pattern or '?' in pattern:
-                    entries = self.fs.list_directory()
+                    normalized = pattern.replace('/', '\\')
+                    if '\\' in normalized:
+                        dir_part, file_pattern = normalized.rsplit('\\', 1)
+                    else:
+                        dir_part, file_pattern = '.', normalized
+                    entries = self.fs.list_directory(dir_part)
                     for entry in entries:
                         if (
-                            fnmatch.fnmatch(entry.name.upper(), pattern.upper())
+                            fnmatch.fnmatch(entry.name.upper(), file_pattern.upper())
                             and not entry.is_dir
                         ):
+                            full_path = entry.name if dir_part == '.' else f'{dir_part}\\{entry.name}'
                             if not quiet:
-                                self._output_line(f'Deleting {entry.name}')
-                            self.fs.delete_file(entry.name)
+                                self._output_line(f'Deleting {full_path}')
+                            self.fs.delete_file(full_path)
                 else:
                     self.fs.delete_file(pattern)
             except Exception:

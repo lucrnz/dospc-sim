@@ -113,7 +113,7 @@ class SSHInteractiveSession:
     def _show_prompt(self) -> None:
         self.channel.send(self.shell.get_prompt())
 
-    def _parse_escape_sequence(self, raw: bytes, index: int) -> tuple[str, int]:
+    def _parse_escape_sequence(self, raw: bytes, index: int) -> tuple[str, int, bytes]:
         seq = bytes([raw[index]])
         index += 1
         while index < len(raw) and len(seq) < 8:
@@ -129,9 +129,16 @@ class SSHInteractiveSession:
                 if ready:
                     more = self.channel.recv(16)
                     raw = raw[:index] + more + raw[index:]
+                    while index < len(raw) and len(seq) < 8:
+                        seq += bytes([raw[index]])
+                        index += 1
+                        if len(seq) == 2 and seq[1] in (0x4F, 0x5B):
+                            continue
+                        if (len(seq) >= 3 and chr(seq[-1]).isalpha()) or seq[-1] == ord('~'):
+                            break
             except Exception:
                 pass
-        return seq.decode('utf-8', errors='ignore'), index
+        return seq.decode('utf-8', errors='ignore'), index, raw
 
     def _handle_escape(self, seq_str: str) -> None:
         if seq_str == '\x1b[A':
@@ -258,7 +265,7 @@ class SSHInteractiveSession:
             while index < len(data):
                 byte = data[index]
                 if byte == 0x1B:
-                    seq, index = self._parse_escape_sequence(data, index)
+                    seq, index, data = self._parse_escape_sequence(data, index)
                     self._handle_escape(seq)
                     continue
                 if byte in (0x0D, 0x0A):

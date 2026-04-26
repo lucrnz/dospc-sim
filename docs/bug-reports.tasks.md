@@ -63,7 +63,9 @@ Status: Done
 **Files:** `src/dospc_sim/shell_commands.py`
 **Impact:** Functional — wildcard deletes with a directory prefix silently fail or target the wrong directory.
 
-Status: Todo
+Benchmark data: Pre: DEL 3727 ops/s | Post: DEL 3897 ops/s | Delta: noise
+
+Status: Done
 
 ---
 
@@ -74,7 +76,9 @@ Status: Todo
 **Files:** `src/dospc_sim/ssh_server.py`
 **Impact:** Input handling — some escape sequences or rapid keypresses can be dropped or misparsed.
 
-Status: Todo
+Benchmark data: Pre: N/A (SSH not benchmarked) | Post: N/A | Delta: noise
+
+Status: Done
 
 ---
 
@@ -129,7 +133,9 @@ Status: Todo
 **Files:** `src/dospc_sim/ssh_server.py`
 **Impact:** Input handling — escape sequences that require extra reads may be partially consumed, causing garbled input or missed keystrokes.
 
-Status: Todo
+Duplicate of bug 6, fixed there.
+
+Status: Done
 
 ---
 
@@ -197,4 +203,6 @@ Status: Done
 **Files:** `src/dospc_sim/shell_commands.py`
 **Impact:** Functional — wildcard deletes with path prefixes fail.
 
-Status: Todo
+Duplicate of bug 5, fixed there.
+
+Status: Done
