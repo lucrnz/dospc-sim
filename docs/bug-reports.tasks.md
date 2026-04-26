@@ -115,7 +115,9 @@ When a variable doesn't exist, `cmd_set` returns with no output. In Windows CMD,
 **Files:** `src/dospc_sim/shell_commands.py`
 **Impact:** Compatibility — missing feedback for undefined variables.
 
-Status: Todo
+Benchmark data: Pre: SET 96829 ops/s | Post: SET 82790 ops/s | Delta: noise
+
+Status: Done
 
 ---
 
@@ -126,7 +128,9 @@ Status: Todo
 **Files:** `src/dospc_sim/filesystem.py`
 **Impact:** Portability — `DIR` fails on Windows hosts.
 
-Status: Todo
+Benchmark data: Pre: DIR 5956 ops/s | Post: DIR 6302 ops/s | Delta: noise
+
+Status: Done
 
 ---
 
@@ -176,7 +180,9 @@ When a variable doesn't exist, `cmd_set` returns without output. Windows CMD pri
 **Files:** `src/dospc_sim/shell_commands.py`
 **Impact:** Compatibility — undefined variables fail silently.
 
-Status: Todo
+Duplicate of bug 9, fixed there.
+
+Status: Done
 
 ---
 
@@ -187,7 +193,9 @@ Status: Todo
 **Files:** `src/dospc_sim/filesystem.py`
 **Impact:** Portability — Windows hosts will error in `DIR`.
 
-Status: Todo
+Duplicate of bug 10, fixed there.
+
+Status: Done
 
 ---
 

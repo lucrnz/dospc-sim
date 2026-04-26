@@ -134,7 +134,10 @@ class SSHInteractiveSession:
                         index += 1
                         if len(seq) == 2 and seq[1] in (0x4F, 0x5B):
                             continue
-                        if (len(seq) >= 3 and chr(seq[-1]).isalpha()) or seq[-1] == ord('~'):
+                        seq_done = (
+                            len(seq) >= 3 and chr(seq[-1]).isalpha()
+                        ) or seq[-1] == ord('~')
+                        if seq_done:
                             break
             except Exception:
                 pass

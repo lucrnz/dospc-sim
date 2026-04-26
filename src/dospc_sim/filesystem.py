@@ -356,8 +356,7 @@ class UserFilesystem:
 
     def get_free_space(self) -> int:
         """Get free space in bytes."""
-        stat = os.statvfs(self.home_dir)
-        return stat.f_frsize * stat.f_bavail
+        return shutil.disk_usage(self.home_dir).free
 
     def get_total_size(self) -> int:
         """Get total size of user's home directory."""

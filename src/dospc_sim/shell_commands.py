@@ -150,7 +150,8 @@ class FileSystemCommandGroup:
                     if str(rel) == '.':
                         dir_display = f'{self.fs.drive_letter}:\\'
                     else:
-                        dir_display = f'{self.fs.drive_letter}:\\{str(rel).replace("/", "\\")}'
+                        rel_str = str(rel).replace('/', '\\')
+                        dir_display = f'{self.fs.drive_letter}:\\{rel_str}'
                 except ValueError:
                     dir_display = self.fs.get_current_path()
                 self._output_line(f' Directory of {dir_display}')
@@ -337,7 +338,10 @@ class FileSystemCommandGroup:
                             fnmatch.fnmatch(entry.name.upper(), file_pattern.upper())
                             and not entry.is_dir
                         ):
-                            full_path = entry.name if dir_part == '.' else f'{dir_part}\\{entry.name}'
+                            if dir_part == '.':
+                                full_path = entry.name
+                            else:
+                                full_path = f'{dir_part}\\{entry.name}'
                             if not quiet:
                                 self._output_line(f'Deleting {full_path}')
                             self.fs.delete_file(full_path)
@@ -503,6 +507,9 @@ class ShellCoreCommandGroup:
             var_name = arg.strip().upper()
             if var_name in self.environment:
                 self._output_line(f'{var_name}={self.environment[var_name]}')
+            else:
+                self._output_line(f'Environment variable {var_name} not defined')
+                return 1
         return 0
 
     def cmd_prompt(self, args: list[str]) -> int:
