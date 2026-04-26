@@ -2,6 +2,8 @@
 
 Terminal UI application built with Python and Textual, exposing an SSH server that presents a simulated DOS environment to connected users.
 
+Even if this is a simulation of a DOS environment, treat this project seriously.
+
 This project uses `uv` for dependency management (`uv sync`, `uv run`).
 
 ## Git Commits
