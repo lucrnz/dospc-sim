@@ -130,6 +130,7 @@ class TestDOSShellCommands:
         shell.fs.make_directory('parent/child')
         shell.fs.write_file('parent/file.txt', 'content')
 
+        shell._input_callback = lambda: 'Y'
         shell._output_capture.clear()
         result = shell.cmd_rd(['/S', 'parent'])
         output = '\n'.join(shell._output_capture)
@@ -137,6 +138,18 @@ class TestDOSShellCommands:
         assert result == 0
         assert not shell.fs.dir_exists('parent')
         assert 'Are you sure (Y/N)?' in output
+
+    def test_cmd_rd_recursive_denied(self, shell):
+        """Test RD with /S switch denied by user."""
+        shell.fs.make_directory('parent/child')
+        shell.fs.write_file('parent/file.txt', 'content')
+
+        shell._input_callback = lambda: 'N'
+        shell._output_capture.clear()
+        result = shell.cmd_rd(['/S', 'parent'])
+
+        assert result == 0
+        assert shell.fs.dir_exists('parent')
 
     def test_cmd_rd_recursive_quiet(self, shell):
         """Test RD with /S /Q suppresses confirmation prompt text."""

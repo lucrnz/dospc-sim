@@ -350,9 +350,10 @@ class SSHClientHandler(threading.Thread):
 
         def input_callback():
             try:
-                channel.recv(1024)
+                data = channel.recv(1024)
+                return data.decode('utf-8', errors='ignore') if data else ''
             except Exception:
-                pass
+                return ''
 
         self.shell._input_callback = input_callback
         self.shell.set_editor_handler(

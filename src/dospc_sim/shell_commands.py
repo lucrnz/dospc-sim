@@ -234,7 +234,12 @@ class FileSystemCommandGroup:
             try:
                 if recursive:
                     if not quiet:
-                        self._output('Are you sure (Y/N)? ')
+                        self._output(f'{dirname}, Are you sure (Y/N)? ')
+                        response = ''
+                        if self._input_callback:
+                            response = self._input_callback() or ''
+                        if not response.strip().upper().startswith('Y'):
+                            continue
                     self.fs.remove_directory_recursive(dirname)
                 else:
                     self.fs.remove_directory(dirname)

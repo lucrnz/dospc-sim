@@ -119,6 +119,7 @@ class TextEditor:
         self.buffer = EditorBuffer()
         self.renderer = EditorRenderer(output_callback)
         self.running = False
+        self._quit_pending = False
 
     @property
     def lines(self) -> list[str]:
@@ -441,13 +442,12 @@ class TextEditor:
 
     def _quit(self) -> None:
         """Quit the editor."""
-        if self.modified:
+        if self.modified and not self._quit_pending:
             self.status_message = (
                 'Unsaved changes! Press Ctrl+Q again to quit without saving'
             )
+            self._quit_pending = True
             self._draw_screen()
-            # Simple debounce - just quit on next request
-            self.running = False
         else:
             self.running = False
 
