@@ -48,7 +48,7 @@ class SimpleCommand:
 
 @dataclass(slots=True)
 class PipeCommand:
-    commands: list[SimpleCommand]
+    commands: list[SimpleCommand | EchoCommand]
 
 
 @dataclass(slots=True)

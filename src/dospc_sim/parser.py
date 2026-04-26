@@ -44,7 +44,10 @@ command_line: command redirect*
         | command_chain
         | simple_command
 
-command_chain: simple_command ("|" simple_command)+
+command_chain: pipeable_command ("|" pipeable_command)+
+
+pipeable_command: simple_command
+               | echo_command
 
 simple_command: command_name argument*
 
@@ -152,6 +155,10 @@ class _DOSTransformer(Transformer):
     def command_chain(self, children):
         commands = [child for child in children if not isinstance(child, Token)]
         return PipeCommand(commands=commands)
+
+    @v_args(inline=True)
+    def pipeable_command(self, cmd):
+        return cmd
 
     def simple_command(self, children):
         return SimpleCommand(name=children[0], args=children[1:])

@@ -37,7 +37,9 @@ Status: Done
 **Files:** `src/dospc_sim/dos_shell.py`
 **Impact:** Functional — FOR loops with piped or nested commands do nothing.
 
-Status: Todo
+Benchmark data: Pre: Batch 2489 ops/s, Pipes 10140 ops/s | Post: Batch 2409 ops/s, Pipes 9905 ops/s | Delta: noise
+
+Status: Done
 
 ---
 
@@ -48,7 +50,9 @@ The grammar limits `command_chain` to `simple_command`, while `ECHO` is parsed a
 **Files:** `src/dospc_sim/parser.py`, `src/dospc_sim/dos_shell.py`
 **Impact:** Compatibility — common pipe usage with `ECHO` and other built-ins fails.
 
-Status: Todo
+Benchmark data: Pre: Pipes 10140 ops/s | Post: Pipes 9905 ops/s, Echo pipe 44097 ops/s | Delta: noise
+
+Status: Done
 
 ---
 
@@ -180,7 +184,9 @@ Status: Todo
 **Files:** `src/dospc_sim/parser.py`, `src/dospc_sim/dos_shell.py`
 **Impact:** Compatibility — built-in commands cannot participate in pipes.
 
-Status: Todo
+Duplicate of bug 4, fixed there.
+
+Status: Done
 
 ---
 

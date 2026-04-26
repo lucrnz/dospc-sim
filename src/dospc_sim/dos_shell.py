@@ -332,7 +332,7 @@ class DOSShell(DOSShellCommandProvider):
     def _execute_pipe(self, pipe: PipeCommand) -> int:
         if len(pipe.commands) < 2:
             if pipe.commands:
-                return self._execute_simple(pipe.commands[0])
+                return self._execute_ast(pipe.commands[0])
             return 1
 
         prev_output = None
@@ -341,12 +341,12 @@ class DOSShell(DOSShellCommandProvider):
             is_last = i == len(pipe.commands) - 1
             self._piped_input = prev_output
             if is_last:
-                result = self._execute_simple(cmd)
+                result = self._execute_ast(cmd)
             else:
                 captured = []
                 original_callback = self.output_callback
                 self.output_callback = lambda text, buf=captured: buf.append(text)
-                self._execute_simple(cmd)
+                self._execute_ast(cmd)
                 self.output_callback = original_callback
                 prev_output = '\n'.join(captured)
         self._piped_input = None
@@ -436,6 +436,17 @@ class DOSShell(DOSShellCommandProvider):
             return 'PAUSE'
         if isinstance(ast, CallCommand):
             return f'CALL {self._ast_to_raw(CommandLine(command=ast.target))}'
+        if isinstance(ast, PipeCommand):
+            parts = []
+            for cmd in ast.commands:
+                parts.append(
+                    self._ast_to_raw(CommandLine(command=cmd))
+                )
+            return ' | '.join(parts)
+        if isinstance(ast, ForCommand):
+            items_str = ' '.join(ast.items)
+            body = self._ast_to_raw(ast.command) if ast.command else ''
+            return f'FOR %%{ast.var} IN ({items_str}) DO {body}'
         return ''
 
     def _find_batch_file(self, name: str) -> str | None:
